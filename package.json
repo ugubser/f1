@@ -1,0 +1,15 @@
+{
+  "name": "f1-race-replay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Historical Formula 1 race replay powered by OpenF1",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "dev": "HOST=0.0.0.0 node server.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

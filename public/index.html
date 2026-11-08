@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101315"><title>F1 / Race Replay</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header><a class="brand" href="/" aria-label="Race replay home"><span class="brand-icon">↗</span> F1 <span class="brand-light">/ REPLAY</span></a><span class="header-note"><i></i> HISTORICAL DATA LAB</span><span class="tag">OPENF1</span></header>
+<main>
+<section class="intro"><div><p class="eyebrow">THE RACE. AT YOUR PACE.</p><h1>Back on track<span>.</span></h1><p class="subtitle">Every driver. Every lap. A different perspective on race day.</p></div><div class="mode"><span class="pulse"></span> REPLAY MODE <small>Recorded positions · no live feed</small></div></section>
+<section class="filters" aria-label="Race selection">
+<label>SEASON<select id="year"></select></label><label>MONTH<select id="month"><option value="">All months</option></select></label><label class="track-filter">CIRCUIT<select id="track"><option value="">All circuits</option></select></label><label class="race-filter">RACE<select id="race"><option>Loading calendar…</option></select></label><button id="load" class="primary" disabled>Load race <span>↗</span></button>
+</section>
+<div id="status" class="status" role="status" aria-live="polite">Connecting to OpenF1…</div>
+<div class="workspace">
+<section class="map-panel"><div class="panel-top"><div><p class="eyebrow" id="race-date">SELECT A RACE</p><h2 id="race-title">Your race awaits</h2></div><span class="outline-badge" id="lap-label">TRACK VIEW</span></div>
+<div class="canvas-wrap"><canvas id="map" aria-label="Circuit map with recorded driver positions"></canvas><div id="empty" class="empty"><span>⌁</span><h3>A whole race, in your hands.</h3><p>Select a race above and load its recorded positions.</p></div><div class="map-corner">POSITION REPLAY <span id="coordinate-label">APPROXIMATE COORDINATES</span></div><div class="map-scale">NATIVE TELEMETRY<br><b>XY / CIRCUIT SPACE</b></div></div>
+<div class="transport"><button id="play" class="play" disabled aria-label="Start replay">▶</button><div class="timeline"><div class="time-labels"><strong id="elapsed">00:00</strong><span id="duration">--:--</span></div><input type="range" id="seek" min="0" max="1000" value="0" disabled aria-label="Replay timeline"><div class="timeline-caption"><span id="clock">SESSION TIME · --:--:-- UTC</span><span>DRAG TO EXPLORE</span></div></div><label class="speed-label">SPEED<select id="speed" aria-label="Playback speed"><option value="1">1×</option><option value="5">5×</option><option value="10" selected>10×</option><option value="30">30×</option><option value="60">60×</option></select></label><button id="reset" class="reset" aria-label="Restart replay" disabled>↺</button></div>
+</section>
+<aside class="drivers-panel"><div class="drivers-heading"><h2>Driver tracker</h2><span id="driver-count">00 CARS</span></div><div class="table-head"><span>POS</span><span>DRIVER</span><span>LAP</span></div><div id="drivers" class="drivers"><p class="placeholder">The field will appear here once you load a race.</p></div><div class="drivers-foot"><i></i> Select a driver to highlight on track.<br><span>Cars disappear when position data stops.</span></div></aside>
+</div>
+<footer><span>Built for the moments you missed.</span><span>Historical data by <a href="https://openf1.org/" target="_blank" rel="noreferrer">OpenF1 ↗</a> · Unofficial project. Not affiliated with Formula 1.</span></footer>
+</main><script type="module" src="/app.js"></script></body></html>
