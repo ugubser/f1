@@ -1,6 +1,6 @@
 # Replay context: interaction concept and data coverage
 
-The driver tracker is the permanent overview: position, driver, tire compound,
+The driver tracker is the permanent overview: position, driver, gap to the car ahead, total gap to P1, tire compound,
 completed laps on that tire set, and current lap. Compound colors are accompanied
 by letters, so color is never the only way to identify a tire. A small dot marks
 notifications within the last minute of replay time, including track-wide messages.
@@ -28,6 +28,7 @@ spaced chicane labels readable on smaller screens.
 
 | Information | Source | Precision and coverage |
 | --- | --- | --- |
+| Ahead / To P1 | OpenF1 `intervals` | Latest record at or before the replay clock, displayed in seconds to three decimals or in laps. Both fields are sourced directly. No estimated gaps or summing of asynchronously recorded intervals. Samples older than 15 seconds, pre-race records and gaps for cars without a current position sample are withheld. A change of driver position or comparison rival requires a new timing record for that comparison. |
 | Tire compound / age | OpenF1 `stints` plus `laps` | Starting age plus completed stint laps. Tire fitting has lap precision, not an exact timestamp. Used sets include their starting age. Missing ages stay unknown. An unfinished retirement lap adds no age. |
 | Driver notices | OpenF1 `race_control` | Includes flags, penalties, investigations, deleted laps and session notices. Many multi-car incidents have no driver field; explicit car numbers in the message associate them with each driver. Source text is preserved. |
 | Pit notifications | OpenF1 `pit` | Entry at the record timestamp, exit derived by adding `lane_duration`. Lane duration is displayed only at exit. `stop_duration`, when supplied, is separately labeled as stationary time. |
@@ -58,3 +59,30 @@ Video was investigated: OpenF1 has no race-video endpoint. F1 TV separately
 provides replays and onboard coverage, subject to its subscription and regional
 availability. Video integration and video links are excluded from this iteration
 at Urs's request.
+
+## Race timing columns
+
+Ahead compares each driver with the previous classified position. To P1 is the
+full accumulated gap to the current leader. For a consistent set of readings:
+
+| Position | Ahead | To P1 |
+| --- | --- | --- |
+| P1 | LEADER | +0.000s |
+| P2 | +1.200s | +1.200s |
+| P3 | +2.300s | +3.500s |
+
+OpenF1 supplies both the adjacent interval and total leader gap. Its driver
+samples are asynchronous, so the recorded total can differ slightly from adding
+the latest displayed intervals. Keep both source measurements unchanged instead
+of deriving an artificial exact total. A lap deficit such as +1 LAP stays in
+laps, independently of the unit in the adjacent interval.
+
+Timings are discrete recorded samples, never interpolated from future values.
+The row tooltip and selected driver's notebook identify the compared drivers and
+recorded timestamp. Missing or ambiguous classification comparisons, unavailable
+fields and stale data are shown as a dash. Leader identity supplies the zero
+reference when P1 has a current position sample. The independent timing endpoint
+can fail without removing the race map or other driver information.
+
+The wider desktop tracker shows both timing columns alongside tire and lap data.
+On small screens the two labeled gaps occupy a second line within each row.

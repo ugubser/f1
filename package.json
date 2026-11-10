@@ -1,12 +1,15 @@
 {
   "name": "f1-race-replay",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Historical Formula 1 race replay powered by OpenF1",
+  "description": "Historical Formula 1 replay and direct F1 subscription live timing",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
+    "f1:login": "node auth-cli.mjs login",
+    "f1:status": "node auth-cli.mjs status",
+    "f1:logout": "node auth-cli.mjs logout",
     "dev": "HOST=0.0.0.0 node server.mjs"
   },
   "engines": {

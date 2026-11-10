@@ -1,4 +1,36 @@
-# Validation — 8 November 2026, iteration 2
+# Validation — 10 November 2026, F1 connection setup fix
+
+- Reproduced the signed-in connection failure without logging the subscription token, cookie values or connection identifiers.
+- F1's OPTIONS bootstrap returned HTTP 405 with AWSALB/AWSALBCORS cookies. The following authenticated POST succeeded with HTTP 200. The app incorrectly rejected the bootstrap before reaching that POST.
+- Fixed handling of this specific affinity-cookie response. POST failures remain errors; authorization failures still stop retries. New errors identify the failed HTTP stage without exposing upstream response bodies.
+- Added three regression tests: OPTIONS 405 with affinity succeeds, OPTIONS 405 without affinity stops, and POST 405 with affinity remains an error. All 62 tests pass.
+- Authenticated direct WebSocket connection now succeeds with the saved sign-in, returning session 11412, 22 drivers and session status `Ends`. The idle state is shown as waiting for a live session, rather than claiming the map is building.
+- The authenticated idle connection stayed established for 36 seconds with zero connection errors. After restarting the local server, browser verification showed “Connected to F1. Waiting for an active session”, 22 drivers and no console warnings/errors.
+- Active-race position and map updates remain to be checked during a session. No credentials needed to be re-entered.
+
+## Earlier validation — 8 November 2026, direct F1 live mode
+
+- All 59 automated tests pass: 31 existing replay/timing tests and 28 new authentication, streaming, live-state and access-control tests.
+- The current public F1 account script and F1 authorization-form preflight both returned HTTP 200. The client/policy configuration was discovered and the returned credential destination matched id.formula1.com. No account credentials were submitted.
+- Tests verify PKCE/state checks, credential-origin restrictions, signed subscription JWTs, expiry, private token-file permissions, symlink rejection, non-interactive CLI refusal and suppression of sensitive upstream errors.
+- Streaming tests verify authenticated negotiation/cookies, JSON handshake and subscription, split/coalesced frames, safe snapshots, authorization failure without anonymous access, reconnect snapshots, stale source data, logout, cancellation and authenticated radio proxying. A real local WebSocket handshake confirms the installed Node runtime sends custom Authorization/Cookie headers without token query parameters.
+- State tests verify indexed/array partial updates, older-leaf rejection, prototype-key rejection, compressed UTC positions, tire stints, pit transitions, message corrections, session resets, a complete clean observed reference lap and independent gap freshness.
+- HTTP tests verify same-origin actions, Origin/Host rejection, local-only policy, no HTTP password endpoint and generic live error responses. Historical HTTP/API tests still pass.
+- Browser checks: Live F1 displays signed-out instructions and disables Connect until a token exists. Historical Monza loads all 20 cars; seeking to 40% gives 30:24 and the expected gaps. Switching to Live F1 and back restores that time, driver selection and the paused replay. No console errors were observed.
+- Mobile live sign-in instructions were checked near 390px with no horizontal overflow. No password field is exposed in the dashboard; the signed-out Connect button is disabled.
+- Authenticated F1 sign-in, upstream subscription entitlement, live position variants and sustained real-session coverage remain unverified until the owner signs in. Synthetic fixtures test the protocol; they are not a production source.
+
+## Earlier validation — race timing addition
+
+- All 31 automated tests pass: the previous 19 checks plus 12 timing/API tests.
+- Timing tests cover P1/P2/P3 semantics, recorded totals, seeking in both directions, future-value exclusion, formation-lap exclusion, missing or malformed fields, stale samples, inactive cars, driver/rival position changes and lap-gap units.
+- API tests verify available and empty timing responses, input validation, explicit upstream failure and continued access to race metadata.
+- Monza 2024 returned 20,444 interval records. At 13:33:59 UTC, Perez in P2 had +2.937s in both columns; Piastri in P3 had +3.762s Ahead and +6.725s To P1. The small difference from adding P2/P3 intervals is retained from the asynchronous source.
+- Browser checks: both columns populated for the racing field; selecting Piastri identified Perez as the car ahead, Verstappen as P1 and the sample timestamp. Seeking to the start cleared pre-race timing; seeking back restored the earlier readings. Play advanced recorded gap values. At 70% replay time the lapped cars displayed +1 LAP rather than invented seconds. Tsunoda's old timing was withheld.
+- Responsive check near 390px: each driver has a labeled second line for Ahead and To P1, with no horizontal overflow detected. Desktop retains both as columns.
+- Timing uses the last recorded source value, with a 15-second freshness limit. This is not a continuous timing estimate. Only Monza was checked end to end for the new timing view.
+
+## Earlier validation — 8 November 2026, iteration 2
 
 - Node.js 26.8.1: all 19 automated tests passed with `npm test`.
 - Syntax checks passed for server.mjs, public/app.js, public/replay.js and track-names.mjs; `git diff --check` passed.

@@ -112,3 +112,46 @@ export function safeRadioUrl(value) {
 export function eventsAt(events,time,{driver=null,kinds=['control','pit','radio'],window=Infinity}={}) {
   return events.slice(0,upperBound(events,time,e=>e.time)).filter(e=>e.time>=time-window&&kinds.includes(e.kind)&&(driver===null||!e.drivers.length||e.drivers.includes(driver)));
 }
+
+export function timingValue(value) {
+  if(Number.isFinite(value)&&value>=0)return {unit:'seconds',value};
+  if(typeof value==='string'){
+    const match=/^\+?(\d+)\s+LAPS?$/.exec(value.trim().toUpperCase());
+    if(match&&+match[1]>0)return {unit:'laps',value:+match[1]};
+  }
+  return null;
+}
+export function indexIntervals(records) {
+  const indexed=new Map();
+  for(const row of records){
+    const time=Date.parse(row.date);
+    if(!Number.isFinite(time)||!Number.isInteger(row.driver_number))continue;
+    if(!indexed.has(row.driver_number))indexed.set(row.driver_number,[]);
+    indexed.get(row.driver_number).push({time,ahead:timingValue(row.interval),leader:timingValue(row.gap_to_leader)});
+  }
+  for(const rows of indexed.values())rows.sort((a,b)=>a.time-b.time);
+  return indexed;
+}
+export function formatTiming(value) {
+  if(!value)return '—';
+  return value.unit==='laps'?`+${value.value} ${value.value===1?'LAP':'LAPS'}`:`+${value.value.toFixed(3)}s`;
+}
+
+// Use the recorded interval and recorded cumulative leader gap. Do not add
+// independently sampled intervals, interpolate future rows or estimate gaps
+// from XY distance. Position changes invalidate comparisons to former rivals.
+export function timingAt(records,time,{position=null,positionSince=-Infinity,aheadSince=null,leaderSince=null,raceStart=-Infinity,active=true,maxAge=15000}={}) {
+  const empty={ahead:null,leader:null,sampleTime:null,status:'unavailable'};
+  if(!active)return {...empty,status:'inactive'};
+  if(!Number.isInteger(position)||position<1||time<raceStart)return empty;
+  if(position===1)return {...empty,leader:{unit:'seconds',value:0},status:'leader'};
+  const index=upperBound(records,time,row=>row.time)-1;
+  if(index<0)return empty;
+  const row=records[index];
+  if(row.time<raceStart)return empty;
+  if(time-row.time>maxAge)return {...empty,sampleTime:row.time,status:'stale'};
+  const aheadCurrent=aheadSince!==null&&row.time>=Math.max(positionSince,aheadSince);
+  const leaderCurrent=leaderSince!==null&&row.time>=Math.max(positionSince,leaderSince);
+  const ahead=aheadCurrent?row.ahead:null,leader=leaderCurrent?row.leader:null;
+  return {ahead,leader,sampleTime:row.time,status:ahead||leader?'recorded':aheadCurrent&&leaderCurrent?'unavailable':'pending'};
+}

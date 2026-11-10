@@ -6,6 +6,8 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {compactLocations} from './public/replay.js';
 import {cornerNames} from './track-names.mjs';
+import {F1LiveClient} from './f1-live.mjs';
+import {AuthError} from './f1-auth.mjs';
 const ROOT=fileURLToPath(new URL('.',import.meta.url));
 const CACHE=path.join(ROOT,'.cache');
 await mkdir(CACHE,{recursive:true});
@@ -61,10 +63,31 @@ async function circuitMetadata(session) {
 }
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml'};
 function json(res,data,status=200){const body=Buffer.from(JSON.stringify(data));const zipped=gzipSync(body);res.writeHead(status,{'Content-Type':'application/json','Content-Encoding':'gzip','Cache-Control':'no-store'});res.end(zipped);}
-export function createReplayServer({load=upstream,loadCircuit=circuitMetadata}={}) {return http.createServer(async(req,res)=>{
+export function createReplayServer({load=upstream,loadCircuit=circuitMetadata,live=new F1LiveClient()}={}) {const server=http.createServer(async(req,res)=>{
   try {
-    if(req.method!=='GET') return json(res,{error:'Method not allowed'},405);
     const url=new URL(req.url,'http://localhost');
+    res.setHeader('Referrer-Policy','no-referrer');res.setHeader('Content-Security-Policy',"frame-ancestors 'none'; base-uri 'self'; object-src 'none'");
+    if(url.pathname==='/api/live'||url.pathname.startsWith('/api/live/')){
+      const local=new Set(['127.0.0.1','::1','::ffff:127.0.0.1']);
+      let host;try{host=new URL('http://'+req.headers.host);}catch{return json(res,{error:'Local access only.'},403);}
+      const expected=host.origin;
+      if(!local.has(req.socket.remoteAddress)||!['localhost','127.0.0.1','[::1]'].includes(host.hostname)||+host.port!==server.address().port||host.username||host.password||req.headers['sec-fetch-site']==='cross-site'||(req.headers.origin&&req.headers.origin!==expected))return json(res,{error:'F1 live access is restricted to this local app.'},403);
+      res.setHeader('Cross-Origin-Resource-Policy','same-origin');
+      try{
+        if(url.pathname==='/api/live'&&req.method==='GET')return json(res,await live.snapshot());
+        if(['/api/live/connect','/api/live/disconnect'].includes(url.pathname)&&req.method==='POST'){
+          if(req.headers.origin!==expected||req.headers['x-f1-action']!=='1'||!req.headers['content-type']?.startsWith('application/json'))return json(res,{error:'Use the live connection buttons in this app.'},403);
+          let size=0;for await(const chunk of req){size+=chunk.length;if(size>1024)return json(res,{error:'Request too large.'},413);}
+          if(url.pathname.endsWith('/connect'))await live.connect();else live.disconnect();
+          return json(res,await live.snapshot());
+        }
+        if(url.pathname==='/api/live/radio'&&req.method==='GET'){
+          const bytes=await live.radio(url.searchParams.get('id'));res.writeHead(200,{'Content-Type':'audio/mpeg','Content-Length':bytes.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return res.end(bytes);
+        }
+        return json(res,{error:'Method or live route not available.'},405);
+      }catch(error){return json(res,{error:error instanceof AuthError?error.message:'The F1 live request could not be completed.'},error instanceof AuthError?401:502);}
+    }
+    if(req.method!=='GET') return json(res,{error:'Method not allowed'},405);
     if(url.pathname==='/api/races') {
       const year=number(url.searchParams.get('year'),'year');
       if(+year<2023||+year>new Date().getUTCFullYear()) return json(res,{error:'Choose a year from 2023 through the current year.'},400);
@@ -84,6 +107,11 @@ export function createReplayServer({load=upstream,loadCircuit=circuitMetadata}={
       endpoints.forEach((key,i)=>{const result=results[i];payload[key]=result.status==='fulfilled'?result.value:[];payload.availability[key]=result.status==='rejected'?{status:'error',message:result.reason.message}:{status:result.value.length?'available':'empty'};});
       return json(res,payload);
     }
+    if(url.pathname==='/api/timing') {
+      const session_key=number(url.searchParams.get('session'),'session');
+      const intervals=await load('intervals',{session_key});
+      return json(res,{intervals,availability:{status:intervals.length?'available':'empty'}});
+    }
     if(url.pathname==='/api/circuit') {
       return json(res,await loadCircuit(number(url.searchParams.get('session'),'session')));
     }
@@ -91,13 +119,13 @@ export function createReplayServer({load=upstream,loadCircuit=circuitMetadata}={
       const session_key=number(url.searchParams.get('session'),'session'), driver_number=number(url.searchParams.get('driver'),'driver');
       return json(res,await load('location',{session_key,driver_number}));
     }
-    const allowed={'/':'index.html','/app.js':'app.js','/replay.js':'replay.js','/style.css':'style.css'};
+    const allowed={'/':'index.html','/app.js':'app.js','/replay.js':'replay.js','/live.js':'live.js','/style.css':'style.css'};
     const file=allowed[url.pathname];
     if(!file) return json(res,{error:'Not found'},404);
     const bytes=await readFile(path.join(ROOT,'public',file));
     res.writeHead(200,{'Content-Type':types[path.extname(file)],'X-Content-Type-Options':'nosniff'});res.end(bytes);
   } catch(e) { console.error(e.message);json(res,{error:e.message},e.message.startsWith('Invalid ')?400:502); }
-});}
+});server.on('close',()=>live.disconnect());return server;}
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
 const server=createReplayServer();
 server.requestTimeout=300000;
