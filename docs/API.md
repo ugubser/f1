@@ -10,7 +10,7 @@ F1 login: `POST /f1/auth/login` with `{ "email": "your-account", "password": "yo
 
 `POST /f1/auth/logout` with `{}` cancels pending authentication, stops the shared live connection and deletes local F1 sign-in. `POST /live/disconnect` stops only the connection. Logout does not revoke tokens at F1 or sign other F1 applications out. No automatic password login or refresh token is implemented. Standard email/password sign-in is supported; additional F1 interactions are explicit failures, not a switch to another method.
 
-Local loopback development uses HTTP. Non-loopback credential submission requires TLS. The current server does not trust forwarded protocol headers; a later deployment must explicitly arrange TLS termination/trust before enabling remote sign-in. Browser origins must be the served origin or listed in `F1_ALLOWED_ORIGINS`; native clients omit Origin. All still require bearer authentication.
+Local loopback development uses HTTP. Non-loopback credential submission requires TLS by default. `F1_ALLOW_HTTP_LOGIN=1` explicitly permits it over HTTP for the owner-authorized trusted LAN deployment. Bearer protection remains required and upstream F1 credential submission always uses HTTPS. The current server does not trust forwarded protocol headers; a later deployment must explicitly arrange TLS termination/trust before enabling remote sign-in. Browser origins must be the served origin or listed in `F1_ALLOWED_ORIGINS`; native clients omit Origin. All still require bearer authentication.
 
 ## Race discovery and asynchronous loading
 

@@ -33,6 +33,9 @@ function bodyJSON(req) {
   });
 }
 const loopback = req => ['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+export function f1LoginTransportAllowed(req, allowInsecureLogin = false) {
+  return loopback(req) || req.socket.encrypted === true || allowInsecureLogin === true;
+}
 export function createReplayServer({apiToken, uiConfig = null, allowedOrigins = [], tokens = new TokenStore(), live = new F1LiveClient({tokens}), login, load, loadCircuit, history = new HistoryService({load,loadCircuit}), views = new ViewService({history,live}), allowInsecureLogin = false, fetchImpl = fetch, streamOptions = {}} = {}) {
   const authorized = bearerGuard(apiToken), account = new AccountService({tokens,live,login}), instanceId = randomUUID(), streams = new StreamService({views,...streamOptions});
   const server = http.createServer(async(req,res) => {
@@ -61,7 +64,7 @@ export function createReplayServer({apiToken, uiConfig = null, allowedOrigins = 
         }
         if (route === '/f1/auth' && method === 'GET') return json(req,res,await account.status());
         if (route === '/f1/auth/login' && method === 'POST') {
-          if (!loopback(req) && !req.socket.encrypted && !allowInsecureLogin) throw new ApiError(426,'HTTPS_REQUIRED','Use HTTPS for F1 credentials.');
+          if (!f1LoginTransportAllowed(req,allowInsecureLogin)) throw new ApiError(426,'HTTPS_REQUIRED','Use HTTPS for F1 credentials.');
           return json(req,res,await account.login(await bodyJSON(req)));
         }
         if (route === '/f1/auth/logout' && method === 'POST') { objectBody(await bodyJSON(req),[]); return json(req,res,await account.logout()); }
@@ -136,7 +139,7 @@ if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.
     catch { console.error('UI access is not configured safely. Set F1_UI_API_TOKEN in public/.env (mode 0600), then restart.'); process.exitCode=1; }
     if(!uiConfig)process.exit(1);
     const origins=(process.env.F1_ALLOWED_ORIGINS||'').split(',').filter(Boolean);
-    const server=createReplayServer({apiToken,uiConfig,allowedOrigins:origins});
+    const server=createReplayServer({apiToken,uiConfig,allowedOrigins:origins,allowInsecureLogin:process.env.F1_ALLOW_HTTP_LOGIN==='1'});
     const flag=name=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1];};
     server.listen(Number(flag('--port')||process.env.PORT)||3000,flag('--host')||process.env.HOST||'127.0.0.1',()=>console.log(`F1 Replay → http://localhost:${server.address().port}`));
     for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{server.shutdown();server.close();setTimeout(()=>process.exit(0),3000).unref();});

@@ -1,3 +1,12 @@
+# Trusted LAN deployment — 10 November 2026
+
+- Owner explicitly authorized HTTP F1 password submission on the trusted LAN. `F1_ALLOW_HTTP_LOGIN=1` enables this deployment option; the default still requires TLS for remote credentials. Forwarded headers do not authorize password transport, and application bearer authentication is unchanged.
+- All 104 tests pass locally and on microserver (Node.js 22.23.2). A LAN HTTP check of the running service returns 401 for an unauthenticated login request, and 400 schema validation for an authenticated empty login body instead of 426. No F1 password or real login attempt was needed for this transport check. The existing saved F1 sign-in remains valid.
+- The user opened TCP port 3000 in the firewall. Independent network requests reach the UI (200) at http://192.168.10.118:3000/. The enabled user service listens on `0.0.0.0:3000`; lingering enables startup without an interactive login. Code is under `~/apps/f1/current`, cache under `~/apps/f1/cache`, private credentials under `~/.local/share/f1-race-replay/`. No Caddy or changes to other services were needed.
+- The base deployment is commit `6a31b6b`; the HTTP-login option is a subsequent local patch, also deployed. Deployment details are recorded in `~/apps/f1/DEPLOYMENT.md` on microserver. The follow-up HTTP-login option, its tests and deployment documentation are included in this change.
+
+---
+
 # UI environment configuration — 10 November 2026
 
 - 103 automated tests pass on Node.js 26.8.1 and 22.23.2. New coverage checks private UI environment permissions and symlink rejection, parsing/invalid or absent configuration, the explicit public bootstrap allowlist, raw environment-file denial, and automatic bearer-authenticated connection on repeated client loads.

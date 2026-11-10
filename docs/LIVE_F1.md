@@ -6,7 +6,7 @@ Live F1 connects the Node server directly to F1's authenticated SignalR Core fee
 
 First provision application API access with `npm run api:setup`, display that application token in your own terminal with `npm run api:token`, and connect the web client at http://localhost:3000.
 
-Select Live F1, enter your F1 email/password, and click Sign in to F1. This invokes the bearer-protected `POST /api/v1/f1/auth/login`. The server forwards credentials only to F1's exact identity-provider origin over HTTPS, verifies the returned subscription JWT and saves the subscription token privately outside the repo. Passwords are never persisted, returned or logged. The UI clears its password field after submission. For LAN deployment, transport to the API must also use HTTPS.
+Select Live F1, enter your F1 email/password, and click Sign in to F1. This invokes the bearer-protected `POST /api/v1/f1/auth/login`. The server forwards credentials only to F1's exact identity-provider origin over HTTPS, verifies the returned subscription JWT and saves the subscription token privately outside the repo. Passwords are never persisted, returned or logged. The UI clears its password field after submission. Remote transport to the API requires HTTPS by default. This owner-authorized trusted LAN deployment sets `F1_ALLOW_HTTP_LOGIN=1` to permit HTTP sign-in explicitly; upstream F1 sign-in continues to use HTTPS.
 
 Only status/expiry reaches clients. The application bearer token and F1 subscription token are distinct. The web browser keeps the application token in memory only; F1 tokens stay server-side. Native clients should keep application tokens in their OS credential store.
 

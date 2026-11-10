@@ -1,8 +1,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createReplayServer} from '../server.mjs';
+import {createReplayServer,f1LoginTransportAllowed} from '../server.mjs';
 import {fixtureLoad,fixtureCircuit,fakeLive,ready,start} from './fixtures.mjs';
 const token='unit-test-api-access-token-at-least-32-characters';
+test('remote F1 password login requires TLS or an explicit trusted-network exception; forwarded headers grant no trust',()=>{
+ const remote={socket:{remoteAddress:'192.168.10.23'},headers:{'x-forwarded-proto':'https','x-forwarded-for':'127.0.0.1'}};
+ assert.equal(f1LoginTransportAllowed(remote),false);
+ assert.equal(f1LoginTransportAllowed(remote,false),false);
+ assert.equal(f1LoginTransportAllowed(remote,'1'),false);
+ assert.equal(f1LoginTransportAllowed(remote,true),true);
+ assert.equal(f1LoginTransportAllowed({...remote,socket:{...remote.socket,encrypted:true}}),true);
+ for(const remoteAddress of ['127.0.0.1','::1','::ffff:127.0.0.1'])assert.equal(f1LoginTransportAllowed({socket:{remoteAddress}}),true);
+});
 async function withServer(run,options={}){
  const f=fakeLive(),server=createReplayServer({apiToken:token,load:fixtureLoad(),loadCircuit:fixtureCircuit,...f,...options});await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const base='http://127.0.0.1:'+server.address().port;
