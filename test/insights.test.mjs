@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {tireAt,sectorsFromLap,alignCorners,messageDrivers,buildEvents,eventsAt,safeRadioUrl,referenceLap} from '../public/replay.js';
+import {tireAt,sectorsFromLap,alignCorners,messageDrivers,buildEvents,eventsAt,safeRadioUrl,referenceLap} from '../domain/replay.mjs';
 const base=Date.parse('2024-09-01T13:00:00Z');
 const iso=seconds=>new Date(base+seconds*1000).toISOString();
 const laps=Array.from({length:4},(_,i)=>({date_start:iso(i*90),lap_number:i+1,lap_duration:90}));

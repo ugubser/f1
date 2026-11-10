@@ -1,0 +1,72 @@
+{
+  "session": 9590,
+  "results": [
+    {
+      "speed": 1,
+      "elapsedSeconds": 6.01,
+      "replaySeconds": 6.01,
+      "renderFrames": 347,
+      "distinctPositionFrames": 347,
+      "bufferUnderruns": 0,
+      "coordinateChunks": 5,
+      "networkMessages": 30,
+      "networkKB": 81.2,
+      "controlMs": 3.2
+    },
+    {
+      "speed": 10,
+      "elapsedSeconds": 6.01,
+      "replaySeconds": 60.05,
+      "renderFrames": 350,
+      "distinctPositionFrames": 350,
+      "bufferUnderruns": 0,
+      "coordinateChunks": 7,
+      "networkMessages": 59,
+      "networkKB": 180.8,
+      "controlMs": 3.9
+    },
+    {
+      "speed": 60,
+      "elapsedSeconds": 6.01,
+      "replaySeconds": 360.89,
+      "renderFrames": 348,
+      "distinctPositionFrames": 348,
+      "bufferUnderruns": 0,
+      "coordinateChunks": 7,
+      "networkMessages": 61,
+      "networkKB": 641.3,
+      "controlMs": 3.4
+    }
+  ],
+  "date": "2026-11-10",
+  "environment": {
+    "platform": "macOS",
+    "node": "26.8.1",
+    "data": "actual cached OpenF1 Monza 2024",
+    "transport": "local REST controls + WebSocket JSON buffering",
+    "scope": "one isolated benchmark view; no F1 live connection"
+  },
+  "browser": [
+    {
+      "speed": 1,
+      "wallSeconds": 83.87,
+      "replaySeconds": 83.8598,
+      "drawFrames": 5030,
+      "distinctTimeFrames": 5030
+    },
+    {
+      "speed": 10,
+      "wallSeconds": 70.473,
+      "replaySeconds": 704.896,
+      "drawFrames": 4229,
+      "distinctTimeFrames": 4229
+    },
+    {
+      "speed": 60,
+      "wallSeconds": 31.249,
+      "replaySeconds": 1875.24,
+      "drawFrames": 1875,
+      "distinctTimeFrames": 1875
+    }
+  ]
+}

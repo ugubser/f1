@@ -1,18 +1,24 @@
 {
   "name": "f1-race-replay",
-  "version": "1.1.0",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
-  "description": "Historical Formula 1 replay and direct F1 subscription live timing",
+  "description": "API-first Formula 1 live timing and historical replay",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
     "f1:login": "node auth-cli.mjs login",
     "f1:status": "node auth-cli.mjs status",
     "f1:logout": "node auth-cli.mjs logout",
-    "dev": "HOST=0.0.0.0 node server.mjs"
+    "dev": "HOST=0.0.0.0 node server.mjs",
+    "api:setup": "node api-access.mjs create",
+    "api:token": "node api-access.mjs show",
+    "test:stream": "node scripts/benchmark-stream.mjs"
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "ws": "8.22.2"
   }
 }

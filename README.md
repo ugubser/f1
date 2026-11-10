@@ -1,85 +1,95 @@
-# F1 / Race Replay
+# F1 / Replay API
 
-A local Formula 1 dashboard with direct F1 subscription live timing and historical replay: choose a season (2023 onwards), month and/or circuit, load a race, then follow the recorded cars on a reconstructed circuit map. Includes playback controls, driver gaps to the car ahead and P1, tire compound and age, replay-timed notifications, color-coded sectors and interactive turn markers.
+An API-first Formula 1 dashboard with historical OpenF1 replay and direct F1 subscription live timing. The included web UI is a client of the same API intended for native applications.
 
-## Start on your Mac
+## Start locally
 
-Requires **Node.js 22 or newer** (no packages to install).
+Requires Node.js 22 or newer. Server and upstream F1 WebSockets use the pinned `ws` package; browsers use their native WebSocket API.
 
 ```bash
 cd /Users/ugubser/Documents/GitHub/f1
-npm start
+npm ci
+npm run api:setup
+cp public/.env.example public/.env
+chmod 600 public/.env
 ```
 
-Open **http://localhost:3000**. The initial selection is **2024 Monza**. Click **Load race**, wait for all cars, then **▶**. An internet connection is required for uncached races. The first download can take several minutes; repeat loads use the local `.cache/` directory. The app loads actual recorded positions, never simulated cars.
+Provision the application access token once. In your own terminal, `npm run api:token` displays it. Set `F1_UI_API_TOKEN` in **public/.env** to that same application token, then run `npm start`. This machine's UI environment is already configured.
 
-If you received this as a ZIP, copy the contents of its `f1` folder into your existing project folder, including the hidden `.git` and `.gitignore`. It already contains an initialised Git repository. You can instead initialise a fresh repository with `git init -b main` if you prefer not to copy `.git`.
+Open **http://localhost:3000**. The web UI connects automatically, including after refresh. A connection failure offers **Retry connection**; an invalid configuration must be corrected in `public/.env`, followed by a server restart. No token prompt or browser storage is used.
 
-Use `PORT=3001 npm start` for another port. The server binds only to localhost.
+The server reads this UI environment at startup and serves only its application token through uncached `/ui-config.json`. Anyone who can load this UI can retrieve that token and use the API. This is the intended trusted-network configuration; `.env` keeps it out of Git, not secret from UI users. The raw `.env` file is never served. F1 subscription credentials remain server-only.
 
-## Direct F1 live timing
+Choose a race and **Load race**. First downloads can take several minutes; repeat loads use the private local `.cache/` directory. Race filtering, loading, replay clocks, derived positions, gaps, tires, notifications and track preparation are server-owned. Play, pause, seek, speed, reset, driver/turn selection, notification filters, overlay settings and radio controls all use API operations.
 
-Historical replay stays available without an F1 account. For live timing, sign in
-securely in your own terminal:
+## F1 sign-in through the API
 
-```bash
-npm run f1:login
+Select **Live F1**. Enter your F1 email/password in the form and click **Sign in to F1**. The UI submits them to `/api/v1/f1/auth/login`, authenticated with your application bearer token. The server forwards them to F1's identity provider, verifies the returned subscription token and saves only that token privately outside the repository. No password is saved or returned. The UI clears its password input on submission.
+
+Click **Connect to F1** to connect. Signing in, starting the app or selecting Live F1 does not connect automatically. **Disconnect** stops the shared connection and retains sign-in. **Sign out of F1** cancels pending sign-ins, disconnects and removes the saved token. The implemented F1 flow has no refresh token: sign in again through the same form/API after expiry. Unexpected additional verification is an explicit error.
+
+Every client shares this one F1 account and live feed. Each client has an independent view: selecting historical replay or closing a view does not disconnect other clients. Historical replay requires no F1 sign-in.
+
+The previous terminal `npm run f1:login`, `f1:status` and `f1:logout` commands remain available for manual account maintenance, but are not needed by any UI workflow.
+
+## API for native clients
+
+All endpoints are under `/api/v1` and require:
+
+```http
+Authorization: Bearer <application-access-token>
 ```
 
-The password prompt is hidden. Credentials go only to F1 over HTTPS; only a
-short-lived subscription token is saved privately outside the project. Return to
-[the local app](http://localhost:3000), choose **Live F1**, then **Connect to F1**.
-Use `npm run f1:status` to check sign-in and `npm run f1:logout` to remove the token.
-Repeat sign-in when the token expires. Do not send credentials or tokens in chat.
+The application token is separate from F1's subscription token. Native clients never need or receive F1 tokens. Other clients can configure the same application token through their own environment/configuration; native clients can also use their platform credential store.
 
-Live mode includes timing gaps, tire data, recorded positions and notifications.
-Its map waits for a complete clean lap captured after joining. Switching back
-restores the historical race, time and selected driver. There is no automatic
-source substitution. See [secure setup and live limitations](docs/LIVE_F1.md).
+Retrieve the machine-readable contract at **`GET /api/v1/openapi.json`** with your bearer header. Its source is `openapi.mjs`. See [docs/API.md](docs/API.md) for full lifecycle, commands, streaming, errors and example requests.
 
-## Explore a historical race
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /system` | Capabilities and server restart identity |
+| `GET /races?year=2024&month=9&circuit=39` | Server-filtered race discovery |
+| `POST /views` | Create an independent history/live view |
+| `GET`, `PATCH`, `DELETE /views/{id}` | Read, update or release a view |
+| `POST /views/{id}/playback` | Play, pause, seek, reset, speed |
+| `GET /views/{id}/events` | Paginated notifications with the view's filters |
+| `POST /views/{id}/radio` | Select, play, pause, seek or stop audio |
+| `POST /views/{id}/stream-ticket` | Issue a single-use WebSocket connection ticket |
+| `GET /media/radio/{clipId}` | Authenticated MP3 response |
+| `GET /f1/auth` | F1 sign-in status and expiry |
+| `POST /f1/auth/login`, `/f1/auth/logout` | Email/password sign-in and sign-out |
+| `GET /live`, `POST /live/connect`, `/live/disconnect` | Shared live connection |
 
-- **Ahead** shows the recorded interval to the previous race position; **To P1** shows the total gap to the leader. Both follow play, pause and seeking. P1 is the zero reference; lapped gaps stay in laps. Missing, updating or stale values show a dash. Hover a row, or select a driver, for its comparison drivers and recorded time. The two recorded fields can differ slightly from summing displayed intervals because updates are asynchronous.
-- Every driver row shows compound (S/M/H/I/W) and age in completed laps on the set, including prior use. Tire changes have lap precision. Unknown data is marked explicitly.
-- Select a driver to highlight their car and filter the **Race notebook**. Its race-control notices, pit-lane entries/exits and radio clips follow the replay clock. Track-wide notices are included. **Show all drivers** returns to the whole field.
-- Switch notification categories on or off. Click an event timestamp to pause and seek to that moment. **Listen** plays the selected radio clip and pauses the replay; seeking stops the clip.
-- Toggle **Sectors** and **Turns** independently. Select a numbered turn for details, or enable **Turn names** for a clickable directory. Turn names also appear on hover/focus. Curated names currently cover Monza; other tracks use supplied names or numbers.
-- Source counts, missing feeds and incompatible turn geometry are reported next to the relevant view. Video is not part of this iteration.
+WebSocket protocol: [docs/STREAMING.md](docs/STREAMING.md). REST remains the control interface; replay/live motion uses buffered coordinate chunks and metadata deltas. The web client draws between supplied samples at display refresh rate.
 
-The interaction concept, source contracts and coverage limits are documented in [docs/REPLAY_CONTEXT.md](docs/REPLAY_CONTEXT.md).
+Legacy unversioned endpoints and the former SSE stream are removed. There is no unauthenticated API or silent data-source substitution.
 
-## How it works
+## Storage and nightly shutdown
 
-- `/api/races?year=2024`: completed Race sessions from OpenF1 (not sprints).
-- `/api/race?session=9590`: drivers, lap records and recorded classification changes.
-- `/api/timing?session=9590`: recorded OpenF1 intervals and leader gaps, with explicit available/empty coverage.
-- `/api/insights?session=9590`: tire stints, race control, pit visits and team radio, with separate available/empty/error states for each source.
-- `/api/circuit?session=9590`: MultiViewer turn markers requested for the session's circuit and season, enriched with verified names where maintained.
-- `/api/trajectory?session=9590&driver=16`: timestamped coordinates for one driver, compacted to approximately one sample per 0.8 seconds; UI interpolates short gaps.
-- A complete, quick non-pit-out lap defines the circuit outline. All cars use the same session's original XY coordinates.
-- Recorded sector durations divide that reference lap into three colored paths. Missing or inconsistent timing leaves sectors unavailable. Turn markers are checked against the lap; an incompatible marker set is not displayed.
-- One UTC clock drives every driver. Lap-one start sets time zero. The timeline extends through the last available completed lap. Retired/stopped data disappears after five seconds without samples. A driver with no samples at the current time is dimmed in the table; this is not an official retirement classification.
-- API requests are queued, throttled and retried on rate limits. Successful non-empty responses are cached with gzip; cache is intentionally excluded from Git and the distributed ZIP.
-- Year/month/circuit filter the available races together; month follows the session's UTC date.
+The server application access key and F1 subscription token are private files outside the project. The web UI has a separate ignored copy of the application key in `public/.env` (mode `0600`). On macOS: `~/Library/Application Support/F1 Race Replay/`; on Linux: `~/.local/share/f1-race-replay/`. The application key is `api-access.key`; the F1 token is `session.json`. These files must belong to the service user and have mode `0600`. They are private files, not an encrypted vault. Caches stay under `.cache/` and are ignored by Git.
+
+Valid credentials and disk caches survive shutdown. Views are ephemeral and expire after 30 minutes without requests. Restart invalidates view IDs; clients recreate a view. No live connection starts until explicitly requested. Previous live positions and circuit references are not restored as current, and live gaps while the machine is off are not backfilled. The live map needs a new complete clean observed lap.
+
+## Local development and future LAN deployment
+
+The server binds only to `127.0.0.1` by default. `PORT=3001 npm start` changes its port. You can supply an application token of at least 32 characters through `F1_API_TOKEN` instead of the private file; never commit its value.
+
+This iteration remains local. LAN deployment requires HTTPS, forwarding both API and UI through the same trusted origin, and private token provisioning for the service user. Non-loopback password requests without TLS are rejected. `F1_ALLOWED_ORIGINS` is a comma-separated exact-origin allowlist for a separately hosted browser client. Native clients do not require Origin headers. The inbuilt web UI uses its own origin; its CSP intentionally does not allow arbitrary external API servers. A future TLS reverse proxy must be configured explicitly; forwarded headers are not blindly trusted.
 
 ## Validation
 
 ```bash
 npm test
+npm run test:stream
 node --check server.mjs
 node --check public/app.js
 ```
 
-Tests cover shared-clock interpolation, stale/missing data, future-lap/event exclusion, tire age and stint changes, retirement laps, sector splitting, turn alignment, multi-car notice attribution, radio URL validation, pit-duration timing, optional-source failures, interval/leader-gap timing, stale samples, changed rivals, lap-gap units and HTTP routes. See VALIDATION.md for the checks performed on this version.
+See [VALIDATION.md](VALIDATION.md) for performed checks and real-provider limits. API/service tests use explicit isolated fixtures. Production always uses real sources.
 
-## Limits and future work
+## Data and limits
 
-OpenF1 is unofficial. Historical data from 2023 is free; recent/live data may require a separate paid OpenF1 account. Historical replay does not use an F1 TV subscription. API availability, fields and rate limits may change. Live mode connects directly to F1 using your subscription; historical mode continues to use OpenF1.
+Gaps are independently recorded Ahead and To P1 values, not sums of asynchronously sampled rows. Unknown, changed-comparison or stale values are withheld. Tire age is completed laps on a set, including prior use; fitting times have lap precision. Positions disappear when samples stop. Missing feeds remain explicit.
 
-Positions are approximate: no accurate lateral placement, track boundaries or overtaking-line detail. The map is a lap trace, not a surveyed track plan. Track changes are handled by deriving geometry for each selected session. Race red flags, gaps and delayed samples can create periods without movement. Driver labels can overlap in a pack; click a driver for emphasis. Fonts use an optional Google Fonts stylesheet with local fallbacks.
+The map is approximate session XY geometry, not GPS or track boundaries. Recorded sector durations split a complete clean lap. Historical turn markers come from MultiViewer and must align with that session. Curated Monza names are maintained separately. The direct live feed does not supply turn markers. Radio is only the selection supplied by the source. Video is outside this version.
 
-Sector boundaries inherit approximate lap timestamps and compacted telemetry. MultiViewer markers are manually created and can have an older reference year, shown in the UI. Tire fitting is not timestamped; the table uses stint lap boundaries. Radio is a selection of communications, with significantly reduced coverage from 2026 according to OpenF1. Notebook times inherit source delays and corrections. Pit exit time is derived from the pit record timestamp plus lane duration; stationary time is separately shown only when supplied.
-
-The direct live source handles authenticated SignalR snapshots and partial updates, expiry, reconnects and stale data. It does not synchronize video or automatically switch sources. Historical replay does not reproduce the original arrival order of partial records.
-
-Data: [OpenF1](https://openf1.org/docs/), [MultiViewer](https://multiviewer.app/) and the [official Monza circuit guide](https://www.monzanet.it/en/circuit/). Unofficial project, not affiliated with Formula 1.
+Historical data: [OpenF1](https://openf1.org/docs/). Circuit markers: [MultiViewer](https://multiviewer.app/). Curated names: [Monza](https://www.monzanet.it/en/circuit/). Direct live mode uses F1 consumer endpoints through your subscription; these can change. Unofficial project, not affiliated with Formula 1.

@@ -28,13 +28,13 @@ export function verifySubscription(value,keys,now=Date.now()){
   return {value,expiresAt:token.claims.exp*1000};
 }
 // No credentials or response bodies appear in errors, even when F1 echoes them.
-export async function signIn(username,password,{fetchImpl=fetch,now=Date.now}={}){
+export async function signIn(username,password,{fetchImpl=fetch,now=Date.now,signal}={}){
   const cookies=new Map();
   async function request(url,options={}){
     const parsed=new URL(url);
     if(parsed.origin!==IDP&&url!==CONFIG&&url!==JWKS)throw new AuthError('Unexpected F1 sign-in destination.');
     let response;
-    try{response=await fetchImpl(url,{...options,headers:{...headers,...(parsed.origin===IDP&&cookies.size?{Cookie:[...cookies].map(([k,v])=>k+'='+v).join('; ')}:{}),...options.headers},redirect:'manual',signal:AbortSignal.timeout(30000)});}
+    try{response=await fetchImpl(url,{...options,headers:{...headers,...(parsed.origin===IDP&&cookies.size?{Cookie:[...cookies].map(([k,v])=>k+'='+v).join('; ')}:{}),...options.headers},redirect:'manual',signal:signal?AbortSignal.any([signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000)});}
     catch{throw new AuthError('Could not reach F1 sign-in. Check your connection and try again.');}
     if(parsed.origin===IDP)for(const cookie of response.headers.getSetCookie()){
       const pair=cookie.split(';')[0],index=pair.indexOf('=');if(index>0)cookies.set(pair.slice(0,index),pair.slice(index+1));
@@ -67,12 +67,12 @@ export class TokenStore{
     try{
       handle=await open(this.file,constants.O_RDONLY|constants.O_NOFOLLOW);
       const info=await handle.stat();
-      if(!info.isFile()||(info.mode&0o077)!==0||(process.getuid&&info.uid!==process.getuid()))throw new AuthError('F1 token storage must belong to you and have private file permissions. Run npm run f1:login again.');
+      if(!info.isFile()||(info.mode&0o077)!==0||(process.getuid&&info.uid!==process.getuid()))throw new AuthError('F1 token storage must belong to you and have private file permissions. Sign in again through the app or API.');
       const stored=JSON.parse(await handle.readFile('utf8'));
       if(typeof stored.value!=='string'||!Number.isFinite(stored.expiresAt)||jwtParts(stored.value).claims.exp*1000!==stored.expiresAt)throw Error();
-      if(stored.expiresAt<=this.now()+60000)throw new AuthError('F1 sign-in expired. Run npm run f1:login in your own terminal.');
+      if(stored.expiresAt<=this.now()+60000)throw new AuthError('F1 sign-in expired. Sign in through the app or API.');
       return stored;
-    }catch(error){if(error instanceof AuthError)throw error;if(error.code==='ENOENT')throw new AuthError('Sign in first: run npm run f1:login in your own terminal.');throw new AuthError('F1 token storage could not be read safely. Run npm run f1:login again.');}
+    }catch(error){if(error instanceof AuthError)throw error;if(error.code==='ENOENT')throw new AuthError('Sign in through the app or API first.');throw new AuthError('F1 token storage could not be read safely. Sign in again through the app or API.');}
     finally{await handle?.close();}
   }
   async status(){try{const token=await this.read();return {signedIn:true,expiresAt:token.expiresAt};}catch(error){return {signedIn:false,expiresAt:null,message:error.message};}}

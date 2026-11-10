@@ -1,3 +1,5 @@
+> API-first v2: the interaction behavior below is preserved, but the server now owns its rules and state. Web/native clients use the bearer-protected `/api/v1` contract. See [API.md](API.md) for authoritative routes, independent views, playback, authentication and media. Earlier implementation/source references in this document describe the original replay version.
+
 # Replay context: interaction concept and data coverage
 
 The driver tracker is the permanent overview: position, driver, gap to the car ahead, total gap to P1, tire compound,

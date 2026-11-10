@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {indexIntervals,timingValue,timingAt,formatTiming} from '../public/replay.js';
+import {indexIntervals,timingValue,timingAt,formatTiming} from '../domain/replay.mjs';
 const base=Date.parse('2024-09-01T13:00:00Z');
 const iso=seconds=>new Date(base+seconds*1000).toISOString();
 const row=(seconds,driver,interval,gap)=>({date:iso(seconds),driver_number:driver,interval,gap_to_leader:gap});

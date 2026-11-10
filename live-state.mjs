@@ -1,5 +1,5 @@
 import {inflateRawSync} from 'node:zlib';
-import {referenceLap,sectorsFromLap,messageDrivers,safeRadioUrl,timingValue} from './public/replay.js';
+import {referenceLap,sectorsFromLap,messageDrivers,safeRadioUrl,timingValue} from './domain/replay.mjs';
 const forbidden=new Set(['__proto__','constructor','prototype']);
 export const LIVE_TOPICS=['Heartbeat','DriverList','ExtrapolatedClock','SessionInfo','SessionStatus','SessionData','TimingData','TimingAppData','LapCount','RaceControlMessages','TeamRadio','TrackStatus','Position.z'];
 export function secondsFromF1(value){
@@ -49,8 +49,8 @@ export class LiveState{
           if(!Number.isInteger(+number)||!p||![p.X,p.Y,p.Z].every(Number.isFinite)||(p.X===0&&p.Y===0))continue;
           const points=this.points.get(+number)||[];const last=points.at(-1);
           if(last&&date<=last[0])continue;
-          if(!last||date-last[0]>=600)points.push([date,p.X,p.Y,p.Z]);
-          while(points.length&&(date-points[0][0]>20*60*1000||points.length>3000))points.shift();
+          points.push([date,p.X,p.Y,p.Z]);
+          while(points.length&&(date-points[0][0]>20*60*1000||points.length>12000))points.shift();
           this.points.set(+number,points);
         }
       }
@@ -109,7 +109,7 @@ export class LiveState{
     for(const [key,row] of entries(this.raw.TeamRadio?.Captures)){
       const time=Date.parse(row?.Utc);if(!Number.isFinite(time)||!row.Path||!sessionPath)continue;
       const url=safeRadioUrl('https://livetiming.formula1.com/static/'+sessionPath+row.Path);if(!url)continue;
-      const id='radio-'+key;this.events.set(id,{id,time,kind:'radio',drivers:[integer(row.RacingNumber)].filter(n=>n!==null),message:'Team radio clip',url:'/api/live/radio?id='+encodeURIComponent(id),sourceUrl:url});
+      const id='radio-'+key;this.events.set(id,{id,time,kind:'radio',drivers:[integer(row.RacingNumber)].filter(n=>n!==null),message:'Team radio clip',clipAvailable:true,sourceUrl:url});
     }
   }
   snapshot(){

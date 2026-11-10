@@ -1,3 +1,53 @@
+# UI environment configuration — 10 November 2026
+
+- 103 automated tests pass on Node.js 26.8.1 and 22.23.2. New coverage checks private UI environment permissions and symlink rejection, parsing/invalid or absent configuration, the explicit public bootstrap allowlist, raw environment-file denial, and automatic bearer-authenticated connection on repeated client loads.
+- `public/.env` was provisioned locally with the existing application token, mode `0600`, and verified ignored by Git. No credential rotation was performed. The bootstrap deliberately exposes the application credential to UI users, never F1 subscription tokens or other environment entries. All application REST endpoints still require bearer authentication.
+- The running local server was restarted. Browser verification confirmed automatic connection before and after refresh, without a token input; the race calendar loaded through the authenticated API. Replay loading was also checked after automatic connection.
+- No deployment, commit or push was performed for this change.
+
+---
+
+# Validation — 10 November 2026, buffered WebSockets (2.1)
+
+- **100 automated tests pass on both Node.js 26.8.1 and Node.js 22.23.2**, tested locally. The latter matches the microserver's previously inspected runtime version; no code was deployed there.
+- REST controls are retained. The former SSE route is removed. New tests cover bearer-protected, expiring single-use tickets; no pre-auth socket data; origin/query rejection; ticket reuse/expiry; unauthenticated timeout; metadata deltas; source/seek/speed epochs; coordinate buffering; ACK limits; sanitized errors and fresh same-view reconnect snapshots. Actual WebSocket wire messages conform to the declared native-client schemas.
+- Deterministic 60 Hz presentation tests at **1x, 10x and 60x** match actual supplied fixture coordinates on every frame. Long gaps do not become invented movement; underruns stop at the supplied coverage limit; obsolete epochs are discarded. A separate test proves live positions less than 600 ms apart are retained.
+- Real-data buffer benchmark: actual cached **Monza 2024 / session 9590**, isolated loopback API server, same MotionBuffer as the web client. Each speed ran for approximately six seconds, with **zero buffer underruns** and a distinct driver-81 position at every sampled frame. Node timer cadence was approximately 58 frames/second, not claimed to be a physical display measurement. REST control latency averaged approximately 3–4 ms per tested play command.
+
+| Speed | Wall seconds | Replay seconds | Distinct position frames | Buffer underruns | Control ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1x | 6.01 | 6.01 | 347 | 0 | 3.2 |
+| 10x | 6.01 | 60.05 | 350 | 0 | 3.9 |
+| 60x | 6.01 | 360.89 | 348 | 0 | 3.4 |
+
+- Browser checks with the real Monza race independently verified continuous presentation. At 1x: **83.870 wall seconds / 83.860 replay seconds / 5,030 draw frames**; 10x: **70.473 / 704.896 / 4,229 frames**; 60x: **31.249 / 1,875.240 / 1,875 frames**. Each sampled draw advanced presentation time (distinct-time frame counts equal draw counts), approximately **60 Hz** at all three speeds. Buffering was false at the recorded start/end samples. Pause, seek, driver selection and source restoration also passed. No browser console warnings/errors were observed.
+- Browser Live F1 connected through the new downstream WebSocket stream with the existing saved sign-in, showing **22 cars** and the upstream ended-session waiting state. Switching to live cleared historical turn markers immediately; switching back restored the historical time/driver, paused. Active-race position cadence and upstream-to-screen latency cannot be measured from an ended session.
+- Production F1 transport now uses the same pinned `ws` library for consistent private-header support on the supported Node runtimes. An actual authenticated connection with this implementation returned **waiting / Ends / 22 cars**. F1 tokens remain server-side; REST login/logout and application bearer access are unchanged. The owner had already confirmed a fresh subscription login through the v2 web/API form.
+- Full numeric results are in [docs/stream-benchmark.json](docs/stream-benchmark.json); repeat with `npm run test:stream`. Socket bytes include initial snapshots/buffers. JSON is retained; binary encoding was unnecessary for this local workload. Live rendering adds a deliberate 300 ms source buffer, and never removes delay already present upstream.
+- Local-only verification. Nightly reboot behavior, TLS/reverse-proxy deployment, performance on the microserver hardware and sustained active-session coverage remain separate deployment checks. Valid access/F1 tokens and caches persist; view IDs, sockets and motion buffers do not. Nothing was deployed, committed or pushed for this iteration.
+
+---
+
+# Validation — 10 November 2026, API-first v2
+
+- All **84 automated tests pass** on Node.js 26.8.1. Existing race-rule, JWT/storage and SignalR checks remain; HTTP tests now target the bearer-protected v1 API. New service/transport/contract checks cover independent views/clocks, server-derived frames, cancellation, expiry, source-switch races, authentication and radio.
+- Unauthenticated, incorrect-token and URL-token requests are rejected for application APIs, including legacy routes, F1 sign-in, media and SSE. Native requests work without browser-specific Origin/action headers; allowed browser preflight and rejected foreign origins are tested.
+- F1 API password login, sign-in status, explicit connect, logout, concurrent login rejection, cancellation and logout-vs-save ordering pass with isolated fixtures. Invalid bodies and raw upstream errors do not echo passwords or F1 tokens. Application access key creation/storage rejects overwrite, symlinks and public permissions.
+- OpenAPI response schemas are checked against real HTTP fixture responses for system, races, auth, live state, historical/live views, events, playback and radio. A separate structural check of actual provider responses (system, discovery, historical view and live view) also passed. The checker covers the schema vocabulary used in this contract; it is not a general OpenAPI linter or proof of every external SDK generator.
+- API-only acceptance on the final local server loaded actual Monza 2024 with **20 cars, 3 sectors and 11 aligned turns**. It sought to 40%, selected driver 81/turn 6, read events, retrieved a **135,936-byte** radio clip through protected media, and proved a second view kept its independent time. No browser calculations were involved.
+- The final local server started disconnected with the persisted sign-in still valid. An explicit API connect succeeded using the owner's existing saved F1 token: session status **Ends**, **22 drivers**, waiting for a live session. Disconnect and source restoration returned the historical view to its prior time, paused. This was **not a fresh email/password sign-in** and did not verify active-race streaming.
+- Browser verification with actual Monza: load/seek, gaps/tires, driver selection, sector colors, named turns and turn selection worked through the new endpoints. Play/pause advanced/stopped the server clock. Switching to live showed the saved sign-in, explicit connect returned 22 cars, and returning to history restored the time/driver. Radio played from an authenticated Blob URL; pause, seek and close worked. No console warnings/errors were observed.
+- The email/password form was additionally exercised against an explicitly isolated fixture server. It submitted through the login API, cleared the password field, showed signed-in/expiry status and left F1 disconnected until Connect. Logout returned to signed-out/disconnected. At **390 px** viewport width, the final login UI had no horizontal overflow (content 375 px); console warnings/errors were absent. No owner password was requested or submitted by the agent.
+- The local application access key was provisioned privately outside Git, and the final API/UI is running at localhost:3000. Temporary browser-validation servers are removed after checks. Nothing was deployed to microserver, committed or pushed in this iteration.
+
+## Remaining real-provider checks
+
+- Completed after the v2 implementation: the owner confirmed a **fresh real-account API sign-in** through the new UI. This is owner-reported evidence; fixture login and agent-observed saved-token connection remain explicitly separate checks.
+- Sustained active-session updates, circuit reconstruction after reconnect and all live message variants still need verification during an active F1 session. No missing live data is backfilled or replaced with another source.
+- LAN TLS/reverse-proxy setup, microserver lifecycle and native application integration are outside this local iteration. Nightly restart behavior is defined and service state/expiry are tested; the host's actual shutdown schedule has not been changed or exercised.
+
+---
+
 # Validation — 10 November 2026, F1 connection setup fix
 
 - Reproduced the signed-in connection failure without logging the subscription token, cookie values or connection identifiers.

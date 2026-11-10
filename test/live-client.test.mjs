@@ -1,3 +1,4 @@
+import {WebSocket} from 'ws';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -69,7 +70,7 @@ test('disconnect cancels a pending sign-in read before any upstream call',async(
   let resolve;const {client,requests}=setup({tokens:{read:()=>new Promise(r=>resolve=r)}});
   const pending=client.connect();client.disconnect();resolve({value:secret,expiresAt:base+3600000});await pending;await tick();assert.equal(requests.length,0);assert.equal(client.wanted,false);
 });
-test('native Node WebSocket sends private headers without putting credentials in URLs',async()=>{
+test('production F1 WebSocket client sends private headers without putting credentials in URLs',async()=>{
   let seen,socket;const server=createServer();server.on('upgrade',(req,s)=>{seen=req.headers;socket=s;const accept=createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');s.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: '+accept+'\r\n\r\n');});
   server.listen(0,'127.0.0.1');await once(server,'listening');const ws=new WebSocket('ws://127.0.0.1:'+server.address().port,{headers:{Authorization:'Bearer '+secret,Cookie:'test=affinity'}});ws.addEventListener('error',()=>{});
   try{await once(ws,'open');assert.equal(seen.authorization,'Bearer '+secret);assert.equal(seen.cookie,'test=affinity');assert.equal(ws.url.includes(secret),false);}finally{ws.close();socket?.destroy();server.close();await once(server,'close');}

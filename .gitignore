@@ -8,3 +8,6 @@ node_modules/
 .auth/
 *.har
 *.log
+*.key
+*.pem
+session.json

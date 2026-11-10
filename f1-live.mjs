@@ -1,3 +1,4 @@
+import {WebSocket} from 'ws';
 import {createHash} from 'node:crypto';
 import {AuthError,TokenStore} from './f1-auth.mjs';
 import {LiveState,LIVE_TOPICS} from './live-state.mjs';
@@ -20,7 +21,7 @@ export class F1LiveClient{
     this.tokens=tokens;this.fetch=fetchImpl;this.WebSocket=WebSocketImpl;this.now=now;this.retryBase=retryBase;this.store=new LiveState();this.connection={state:'disconnected',message:'Not connected to F1.'};this.generation=0;this.wanted=false;this.failures=0;
   }
   async authStatus(){
-    try{const token=await this.tokens.read();if(this.rejectedDigest===digest(token.value))return {signedIn:false,expiresAt:null,message:'F1 rejected the saved sign-in. Run npm run f1:login again.'};return {signedIn:true,expiresAt:token.expiresAt};}
+    try{const token=await this.tokens.read();if(this.rejectedDigest===digest(token.value))return {signedIn:false,expiresAt:null,message:'F1 rejected the saved sign-in. Sign in again through the app or API.'};return {signedIn:true,expiresAt:token.expiresAt};}
     catch(error){return {signedIn:false,expiresAt:null,message:error.message};}
   }
   async snapshot(){
@@ -34,7 +35,7 @@ export class F1LiveClient{
     const generation=++this.generation;this.wanted=true;
     try{
       const token=await this.tokens.read();if(generation!==this.generation||!this.wanted)return;
-      if(this.rejectedDigest===digest(token.value))throw new AuthError('F1 rejected the saved sign-in. Run npm run f1:login again.');
+      if(this.rejectedDigest===digest(token.value))throw new AuthError('F1 rejected the saved sign-in. Sign in again through the app or API.');
       this.failures=0;this.rejectedDigest=null;this.store.reset();this.attempt();
     }catch(error){if(generation===this.generation){this.wanted=false;this.connection={state:'auth_required',message:error instanceof AuthError?error.message:'F1 sign-in is unavailable.'};}throw error;}
   }
@@ -50,7 +51,7 @@ export class F1LiveClient{
       const cookies=new Map();
       const request=async(url,method)=>{
         const response=await this.fetch(url,{method,headers:{Authorization:'Bearer '+token.value,...(cookies.size?{Cookie:[...cookies].map(([k,v])=>k+'='+v).join('; ')}:{})},redirect:'manual',signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(20000)])});
-        if(response.status===401||response.status===403)throw new AuthError('F1 rejected the subscription sign-in. Run npm run f1:login again and check your subscription.');
+        if(response.status===401||response.status===403)throw new AuthError('F1 rejected the subscription sign-in. Sign in again through the app or API and check your subscription.');
         for(const cookie of response.headers.getSetCookie()){const pair=cookie.split(';')[0],index=pair.indexOf('=');if(index>0)cookies.set(pair.slice(0,index),pair.slice(index+1));}
         // F1's OPTIONS bootstrap returns 405 but still establishes ALB affinity.
         // Only accept that exact response when it supplied the required cookie;
@@ -65,7 +66,7 @@ export class F1LiveClient{
       let negotiated;try{negotiated=await response.json();}catch{throw new ConnectionError('F1 timing negotiation returned an invalid response.');}if(!current())return;
       if(!negotiated||negotiated.url||typeof negotiated.connectionToken!=='string'||!negotiated.availableTransports?.some(t=>t.transport==='WebSockets'&&t.transferFormats?.includes('Text')))throw new ConnectionError('F1 did not offer a compatible direct WebSocket connection.');
       const url=new URL('wss://livetiming.formula1.com/signalrcore');url.searchParams.set('id',negotiated.connectionToken);
-      socket=new this.WebSocket(url.href,{headers:{Authorization:'Bearer '+token.value,Cookie:[...cookies].map(([k,v])=>k+'='+v).join('; ')}});this.socket=socket;
+      socket=new this.WebSocket(url.href,{perMessageDeflate:false,maxPayload:LIMIT,headers:{Authorization:'Bearer '+token.value,Cookie:[...cookies].map(([k,v])=>k+'='+v).join('; ')}});this.socket=socket;
       const parser=new SignalRFrames();let handshaken=false,ended=false,subscribed=false,lastReceived=this.now();const queued=[];const connectedAt=this.now();
       const fail=(auth=false,message)=>{
         if(ended||!current())return;ended=true;
@@ -111,7 +112,7 @@ export class F1LiveClient{
       socket.addEventListener('close',()=>fail(false,'The F1 connection closed.'));
       this.watchdog=setInterval(async()=>{
         if(!current())return;
-        try{await this.tokens.read();}catch{fail(true,'F1 sign-in expired or was removed. Run npm run f1:login again.');return;}
+        try{await this.tokens.read();}catch{fail(true,'F1 sign-in expired or was removed. Sign in again through the app or API.');return;}
         if(this.now()-lastReceived>30000){fail(false,'F1 stopped sending data.');return;}
         if(socket.readyState===1)socket.send(JSON.stringify({type:6})+RS);
       },10000);this.watchdog.unref?.();
