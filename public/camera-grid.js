@@ -7,7 +7,7 @@
 export const MAX_CAMERAS = 4;
 export const DEFAULT_CAMERA = Object.freeze({id: 'cam-1', mode: 'chase', driver: null, position: null, target: null, fov: 55, hud: true});
 const MODE_LABELS = {chase: 'Chase', onboard: 'Onboard', orbit: 'Orbit', birdseye: "Bird's-eye", trackside: 'Trackside', director: 'TV director'};
-const RENDERED_MODES = ['orbit', 'birdseye'];
+const RENDERED_MODES = ['chase', 'onboard', 'orbit', 'birdseye'];
 
 const element = (tag, cls, text) => { const el = document.createElement(tag); if (cls) el.className = cls; if (text !== undefined) el.textContent = text; return el; };
 const normalise = c => ({id: c.id, mode: c.mode, driver: c.driver ?? null, position: c.position ?? null, target: c.target ?? null, fov: c.fov ?? 55, hud: c.hud ?? true});

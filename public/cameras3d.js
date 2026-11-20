@@ -2,9 +2,11 @@
 // Own input handling (DECISION.md E2: no OrbitControls). Smoothing here is presentation-only (E4): it damps the camera,
 // never the cars, which stay on interpolated supplied samples.
 import * as THREE from '/vendor/three.module.js';
-import {damp} from './track3d.js';
+import {damp, dampAngle, headingVector} from './track3d.js';
 
 export const CAMERA_MODES = [
+  {id: 'chase', label: 'Chase'},
+  {id: 'onboard', label: 'Onboard'},
   {id: 'orbit', label: 'Orbit'},
   {id: 'birdseye', label: "Bird's-eye"},
 ];
@@ -132,7 +134,53 @@ export class BirdseyeController extends Controller {
   }
 }
 
-// Modes from the server contract that this client does not render yet (driver cameras: M2, trackside/director: M3) report that explicitly.
+// Shared damped heading/pitch for driver cameras. Damping runs on presentation (replay) time so 10× playback
+// corners look like 1× (plus a small wall-clock term so a paused view still settles). Snaps on seek or target change.
+class DriverController extends Controller {
+  constructor(fov, {yawRate, pitchRate}) { super(fov); this.yaw = null; this.pitch = 0; this.driver = null; this.yawRate = yawRate; this.pitchRate = pitchRate; }
+  follow(dt, context) {
+    const {target} = context;
+    if (!target) { this.yaw = null; return false; }
+    const snap = this.yaw === null || context.jumped || target.driverNumber !== this.driver;
+    this.driver = target.driverNumber;
+    // Per-frame step is capped so one slow frame at high playback speed cannot swing the camera round in a single frame.
+    const step = Math.min(0.12, context.replayDt) + 0.15 * dt;
+    if (snap) { this.yaw = target.heading; this.pitch = target.pitch || 0; }
+    else { this.yaw = dampAngle(this.yaw, target.heading, this.yawRate, step); this.pitch = damp(this.pitch, target.pitch || 0, this.pitchRate, step); }
+    return true;
+  }
+}
+
+// Behind and above the target car (~9 m back, ~3 m up), damped heading follow.
+export class ChaseController extends DriverController {
+  constructor(fov) { super(fov, {yawRate: 4.5, pitchRate: 3}); }
+  update(dt, context) {
+    if (!this.follow(dt, context)) return noTarget(context);
+    const w = context.target.world, [fx, , fz] = headingVector(this.yaw);
+    this.camera.position.set(w.x - fx * 9, w.y + 3.1, w.z - fz * 9);
+    this.camera.up.set(0, 1, 0); this.camera.lookAt(w.x + fx * 7, w.y + 1.0 + Math.tan(this.pitch) * 7, w.z + fz * 7);
+    this.setClip(0.3, 6000);
+    return {ok: true, labelPx: 15, hideLabel: context.target.driverNumber, carYaw: {driverNumber: context.target.driverNumber, yaw: this.yaw}};
+  }
+}
+
+// Driver-eye / T-cam height: ~1 m above the track just ahead of the cockpit (behind the car's front), looking along the
+// damped heading so the nose, front wheels and cars ahead stay in view.
+// The target car itself is drawn with the same damped yaw in this tile so its nose stays aligned with the view.
+export class OnboardController extends DriverController {
+  constructor(fov) { super(fov, {yawRate: 6, pitchRate: 4}); }
+  update(dt, context) {
+    if (!this.follow(dt, context)) return noTarget(context);
+    const w = context.target.world, [fx, , fz] = headingVector(this.yaw), back = 0.95, up = 1.1;
+    this.camera.position.set(w.x + fx * back, w.y + up, w.z + fz * back);
+    const ahead = 30, drop = Math.tan(this.pitch) * ahead - 1.5;
+    this.camera.up.set(0, 1, 0); this.camera.lookAt(w.x + fx * ahead, w.y + up + drop, w.z + fz * ahead);
+    this.setClip(0.08, 6000);
+    return {ok: true, labelPx: 14, hideLabel: context.target.driverNumber, carYaw: {driverNumber: context.target.driverNumber, yaw: this.yaw}};
+  }
+}
+
+// Modes from the server contract that this client does not render yet (M3) report that explicitly.
 class UnavailableController extends Controller {
   constructor(fov, mode) { super(fov); this.mode = mode; }
   update() { return {ok: false, message: `The ${this.mode} camera is not available in this client yet.`}; }
@@ -142,6 +190,8 @@ export function createController(mode, fov) {
   switch (mode) {
     case 'orbit': return new OrbitController(fov);
     case 'birdseye': return new BirdseyeController(fov);
+    case 'chase': return new ChaseController(fov);
+    case 'onboard': return new OnboardController(fov);
     default: return new UnavailableController(fov, mode);
   }
 }
