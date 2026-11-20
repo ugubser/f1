@@ -37,8 +37,9 @@
 .tile-bar{position:absolute;left:10px;top:10px;right:10px;display:flex;gap:6px;align-items:center;z-index:2;pointer-events:none}
 .tile-bar>*{pointer-events:auto}
 .tile-bar select{flex:0 1 auto;min-width:0;max-width:42%;text-overflow:ellipsis;width:auto;min-height:28px;padding:4px 22px 4px 8px;font-size:11px;background:#0f1517d9;border-color:#3a4447;border-radius:4px}
-.tile-max,.tile-remove{min-width:28px;height:28px;padding:0 7px;border:1px solid #3a4447;border-radius:4px;background:#0f1517d9;color:#cfd8d4;font-size:13px;line-height:1}
-.tile-bar .tile-max{margin-left:auto}
+.tile-max,.tile-remove,.tile-place,.tile-settings{min-width:28px;height:28px;padding:0 7px;border:1px solid #3a4447;border-radius:4px;background:#0f1517d9;color:#cfd8d4;font-size:13px;line-height:1}
+.tile-bar .tile-place{margin-left:auto}
+.tile-place[aria-pressed=true],.tile-settings[aria-expanded=true]{color:var(--accent);border-color:var(--accent)}
 .tile-max[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}
 .tile-max[hidden]{display:none}
 .map-tile>.tile-max{position:absolute;right:12px;top:12px;z-index:6}
@@ -49,3 +50,22 @@
 .add-camera{margin-left:auto;padding:5px 9px;font-size:10px}
 .add-camera[hidden]{display:none}
 .sector-legend:not([hidden])+.add-camera{margin-left:0}
+/* Camera placement and per-tile settings (M3) */
+.tile-pop{position:absolute;top:44px;right:10px;z-index:4;width:min(330px,calc(100% - 20px));max-height:calc(100% - 54px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding:11px 12px;background:#0f1517f2;border:1px solid #3a4447;border-radius:6px;box-shadow:0 6px 22px #0009;cursor:default;font-size:11px;color:#cfd8d4}
+.pop-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+.pop-row input[type=range]{flex:1;min-width:90px;accent-color:var(--accent)}
+.pop-row output{min-width:42px;text-align:right;font:11px ui-monospace,monospace;color:var(--white)}
+.pop-label{flex:0 0 58px;font-size:8px;letter-spacing:1.2px;color:var(--muted)}
+.pop-check{display:flex;align-items:center;gap:6px;font-size:11px}
+.pop-check input{accent-color:var(--accent);margin:0}
+.tile-pop .text-button{min-height:26px;padding:3px 8px;font-size:11px;border:1px solid #3a4447;border-radius:4px;background:#151c1f}
+.tile-pop .text-button[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}
+.pop-corner{flex:1;min-width:110px;min-height:26px;padding:3px 20px 3px 7px;font-size:11px;background:#151c1f;border-color:#3a4447;border-radius:4px}
+.tile-shot{position:absolute;top:46px;left:12px;z-index:1;pointer-events:none;padding:3px 7px;border-radius:3px;background:#0d1214d0;border-left:3px solid var(--accent);font:700 10px 'Barlow Condensed',Barlow,system-ui,sans-serif;letter-spacing:1.2px;color:var(--white)}
+.place-hint{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:7;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 80px);padding:7px 10px;background:#0f1517f0;border:1px solid var(--accent);border-radius:6px;font-size:11px;color:var(--white);box-shadow:0 4px 16px #0008}
+.place-hint .text-button{min-height:24px;padding:2px 8px;font-size:11px;border:1px solid #3a4447;border-radius:4px}
+.map-tile.placing canvas{cursor:crosshair}
+.map-tile.placing .turn-markers{pointer-events:none}
+.map-tile.placing .turn-markers *{pointer-events:none}
+.camera-tile.placing-target{outline:2px solid var(--accent)}
+@media(max-width:760px){.tile-bar{flex-wrap:wrap}.tile-bar select{max-width:38%}.tile-pop{top:44px}}
