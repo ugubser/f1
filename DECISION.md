@@ -48,4 +48,6 @@ Measured on Monza 2024 (session 9590), with Interlagos 2026 (session 11412) as a
 | **M5 Telemetry HUD** | Speed, gear, throttle, brake and DRS in onboard/chase tiles | Unit tests. Values match OpenF1 at the same timestamp. |
 | **M6 Polish and docs** | Kerbs, sector tint, labels, README/API/STREAMING/VALIDATION updates | Full test suite and a visual review |
 
+Status (20 November 2026): M0–M6 are implemented and verified on `feature/3d-cameras`; results are in [VALIDATION.md](VALIDATION.md).
+
 Parallel tracks: the server work (M0, then M5's data loading) runs alongside the client work (M1, then M2/M3/M4). Integration is checked by the lead after each milestone.

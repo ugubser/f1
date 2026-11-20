@@ -334,6 +334,7 @@ export class CameraGrid {
     if (this.scene && this.state) {
       this.scene.setTrack(this.geometry, this.geometry ? `${this.state.geometryRevision}|${this.geometry.points.length}|${this.geometry.points[0]?.[0]}` : null);
       this.scene.syncCars(cars, this.state.settings?.selectedDriver ?? null);
+      this.scene.setOverlays(this.state.settings?.overlays);
     }
   }
 

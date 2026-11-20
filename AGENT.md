@@ -4,7 +4,7 @@
 API-first Formula 1 historical replay and direct F1 Live Timing for Urs. Web and future native clients use exactly the same bearer-protected API. Work locally until deployment is explicitly requested.
 
 ## Working conventions
-- Project: /Users/ugubser/Documents/GitHub/f1. Node.js 22+, native ES modules. One pinned runtime dependency, `ws`, handles server and upstream F1 WebSocket protocol framing; install with `npm ci`.
+- Project: /Users/ugubser/Documents/GitHub/f1. Node.js 22+, native ES modules. Two exact-pinned runtime dependencies: `ws` handles server and upstream F1 WebSocket framing; `three` renders the 3D camera views and only its module build is served under `/vendor` (no CDN). Install with `npm ci`. 3D decisions live in DECISION.md.
 - `npm run api:setup` provisions a private application token once; `npm run api:token` displays it only in an interactive terminal. Configure ignored `public/.env` with `F1_UI_API_TOKEN` matching the API token (mode `0600`), then `npm start`; `npm test`.
 - `server.mjs` is HTTP transport and authentication; `openapi.mjs` is the versioned API contract.
 - `providers.mjs` handles upstream historical requests and disk caching. `services/history.mjs` owns shared race loading, progress and geometry. `services/views.mjs` owns independent view state, replay clocks and derived frames.

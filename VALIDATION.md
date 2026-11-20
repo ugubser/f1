@@ -1,3 +1,20 @@
+# 3D track and camera windows — 20 November 2026
+
+Branch `feature/3d-cameras`. Milestones M0–M6 are in [DECISION.md](DECISION.md). All checks use real Monza 2024 data (session 9590) through isolated loopback servers with random per-run tokens. No F1 connection was made.
+
+- **Data feasibility (free OpenF1 API):** `location` ≈ decimetres (one lap traces 5,734 m vs 5,793 m official), median sampling 240 ms, z spans about 12.5 m. All cars are snapped to one line (VER within 0.05 m median of LEC's line). Interlagos 2026 (session 11412) is also available on the free API.
+- **M0:** full-rate locations (cache tag `location-v2`). The reference lap has 323 points at 240 ms, 5,738 m, 3 sectors and 11/11 turns aligned. The pit lane has 108 points from car 27 lap 5, up to 19.4 m off the racing line, and is 744 m long. The 30 recorded stops yield 25 valid traces that agree to 0.03 m median; 5 were rejected for frozen-position jumps. Camera PATCH round-trip works and 8 invalid cases are rejected with no partial change.
+- **Streaming:** `npm run test:stream` gives 0 underruns and 0 slow-consumer closes at 1×/10×/60×. 60× totals 1.69 MB over 6 s, with a largest message of 494 KiB (five telemetry streams). The slow-consumer threshold was raised from 512 KiB to 1 MiB for these packets; see docs/STREAMING.md. All measurements were on loopback; a real LAN is unverified.
+- **M5 telemetry:** `car_data` for all 20 cars loads in about 35 s after `ready` (about 11.7 MB held in typed arrays). Delivered rows equal raw OpenF1 rows (36/36 compared). The HUD at two paused instants (T1, Roggia) showed the exact OpenF1 row at or before the instant, 124 ms and 131 ms old.
+- **M1:** 3D bird's-eye cars sit within 2.7 m of the 2D map dots at the same render time (20/20 cars). Car heights are within 0.07 m of the track.
+- **M2:** chase/onboard through T1 and Roggia at 1× and 10× had no heading flips. The largest per-frame turn at 10× was 13.5°, which is the car's real turn rate.
+- **M3/M4:** trackside cameras placed by map click at T1 and via *At turn* at Ascari both persist through REST. The director made 13–16 cuts per minute. Four tiles (chase, trackside, director, onboard) stayed independent and persisted. There is no horizontal scroll at 800/1280/1600/1920 px.
+- **Performance at 1600×1000:** headless Chromium on an RTX 4090 (Vulkan) ran 4 tiles plus the map at 60 fps, using 0.6/0.9 ms CPU per frame (p50/p95). SwiftShader software rendering ran about 26 fps with 1 tile and 12 fps with 4.
+- **Tests:** 151 automated tests pass (from 104), including track geometry, pose/telemetry buffering, pit-lane derivation, telemetry decoding, camera contract, director/placement maths and HUD states.
+- **Not verified:** live-mode 3D (D7), real-device GPUs other than the headless RTX 4090, and slow networks. Headless Vulkan logs one WebGL context loss/restore at startup, not caused by app code; rendering recovers.
+
+---
+
 # Trusted LAN deployment — 10 November 2026
 
 - Owner explicitly authorized HTTP F1 password submission on the trusted LAN. `F1_ALLOW_HTTP_LOGIN=1` enables this deployment option; the default still requires TLS for remote credentials. Forwarded headers do not authorize password transport, and application bearer authentication is unchanged.

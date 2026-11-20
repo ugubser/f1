@@ -63,6 +63,25 @@ WebSocket protocol: [docs/STREAMING.md](docs/STREAMING.md). REST remains the con
 
 Legacy unversioned endpoints and the former SSE stream are removed. There is no unauthenticated API or silent data-source substitution.
 
+## 3D track and camera windows
+
+The map panel is a tiled grid: the 2D map plus up to four 3D camera tiles (**+ 3D camera**). Each tile has its own mode and target car, and any tile can be maximized. Camera configuration is a view setting saved through `PATCH /views/{id}` (`settings.cameras`), so native clients share it. Maximize/layout is local.
+
+| Mode | What you see |
+| --- | --- |
+| Chase | Behind and above the target car |
+| Onboard | Driver-eye view with a simple cockpit |
+| Trackside | A fixed camera you place: ⌖ then click the 2D map, or ⚙ → *At turn…*. Aims at the car or at a fixed point; height 1–300 m and FOV in ⚙ |
+| TV director | Follows the car and cuts automatically between generated trackside spots, your trackside cameras, chase and onboard shots |
+| Orbit | Drag to rotate, wheel to zoom, right/shift-drag to pin a pivot; ⚙ → *Pin view here* turns it into a trackside camera |
+| Bird's-eye | Whole circuit from above |
+
+The target car is the tile's driver, else the selected driver, else P1. Onboard, chase and director follow shots show a telemetry HUD (speed, gear, rpm, throttle, brake, DRS) from OpenF1 `car_data`, which loads in the background after the race is ready. HUD values are the latest recorded sample, never interpolated, and missing values show "—".
+
+The 3D track is **approximate**. Only a centerline is recorded, so the circuit is a nominal 12 m ribbon on the recorded elevated reference lap. Kerbs sit at aligned turn markers, and the pit lane comes from a recorded pit stop of that session. There are no barriers or scenery. OpenF1 snaps every car to one line, so side-by-side cars overlap. Overlapping cars are drawn semi-transparent rather than moved. Positions use the same buffered samples and gap rules as the 2D map. See [DECISION.md](DECISION.md).
+
+three.js is an exact-pinned npm dependency, served from `node_modules` at `/vendor/three.module.js` only (no CDN). `?debug3d` exposes a read-only presentation snapshot on `window.__f1Debug3d` for automated browser checks.
+
 ## Storage and nightly shutdown
 
 The server application access key and F1 subscription token are private files outside the project. The web UI has a separate ignored copy of the application key in `public/.env` (mode `0600`). On macOS: `~/Library/Application Support/F1 Race Replay/`; on Linux: `~/.local/share/f1-race-replay/`. The application key is `api-access.key`; the F1 token is `session.json`. These files must belong to the service user and have mode `0600`. They are private files, not an encrypted vault. Caches stay under `.cache/` and are ignored by Git.
@@ -90,6 +109,6 @@ See [VALIDATION.md](VALIDATION.md) for performed checks and real-provider limits
 
 Gaps are independently recorded Ahead and To P1 values, not sums of asynchronously sampled rows. Unknown, changed-comparison or stale values are withheld. Tire age is completed laps on a set, including prior use; fitting times have lap precision. Positions disappear when samples stop. Missing feeds remain explicit.
 
-The map is approximate session XY geometry, not GPS or track boundaries. Recorded sector durations split a complete clean lap. Historical turn markers come from MultiViewer and must align with that session. Curated Monza names are maintained separately. The direct live feed does not supply turn markers. Radio is only the selection supplied by the source. Video is outside this version.
+The map is approximate session XY geometry, not GPS or track boundaries. Recorded sector durations split a complete clean lap. Historical turn markers come from MultiViewer and must align with that session. Curated Monza names are maintained separately. The direct live feed does not supply turn markers. Radio is only the selection supplied by the source. Video is outside this version; the 3D views are a reconstruction from position samples, not footage.
 
 Historical data: [OpenF1](https://openf1.org/docs/). Circuit markers: [MultiViewer](https://multiviewer.app/). Curated names: [Monza](https://www.monzanet.it/en/circuit/). Direct live mode uses F1 consumer endpoints through your subscription; these can change. Unofficial project, not affiliated with Formula 1.
