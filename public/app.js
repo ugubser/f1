@@ -1,8 +1,11 @@
 import {configuredClient} from './connection.js';
 import {MotionBuffer} from './motion-buffer.js';
+import {CameraGrid} from './camera-grid.js';
 const motion=new MotionBuffer();
 const $=id=>document.getElementById(id), ui=Object.fromEntries([...document.querySelectorAll('[id]')].map(el=>[el.id,el]));
-const ctx=ui.map.getContext('2d'),rows=new Map();
+const ctx=ui.map.getContext('2d'),rows=new Map(),dots2d=new Map();
+// 3D camera tiles share the map panel; camera settings are written through the same REST view PATCH as every other setting.
+const grid=new CameraGrid({grid:ui['tile-grid'],mapTile:ui['map-tile'],addButton:ui['add-camera'],motion,onChange:cameras=>patch({cameras}),dots2d});
 let api=null,viewId=null,state=null,geometry=null,lastSequence=0,epoch=0,streamAbort=null,queue=Promise.resolve(),markerKey='',audioURL=null,audioClip=null,audioRequest=null,lastRadioTime=null,signingIn=false;
 const node=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;};
 const duration=ms=>{const seconds=Math.max(0,Math.floor(ms/1000));return `${String(Math.floor(seconds/60)).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;};
@@ -17,7 +20,7 @@ function enabled(connected){
   for(const el of [ui.play,ui.seek,ui.reset,ui.speed,ui['live-connect'],ui['live-disconnect'],ui['f1-logout']])el.disabled=true;
 }
 function lock(message='Connection closed. Retry to reconnect using the UI configuration.'){
-  epoch++;streamAbort?.abort();motion.reset();api=null;viewId=null;state=null;geometry=null;lastSequence=0;markerKey='';signingIn=false;ui['f1-password'].value='';localStopAudio();rows.clear();ui.drivers.replaceChildren();ui['event-list'].replaceChildren();ui['turn-markers'].replaceChildren();ui['turn-directory'].replaceChildren();ui['driver-count'].textContent='00 CARS';ui['driver-detail'].textContent='Connect to the server to view a race.';ui['driver-timing'].hidden=true;ui['event-count'].textContent='';ui['race-title'].textContent='Your race awaits';ui['lap-label'].textContent='TRACK VIEW';ui.empty.hidden=false;ui.empty.querySelector('h3').textContent='Connect to your server';ui.empty.querySelector('p').textContent='The UI connects using its server configuration.';ui['api-connect'].hidden=false;enabled(false);status(message);
+  epoch++;streamAbort?.abort();motion.reset();grid.reset();api=null;viewId=null;state=null;geometry=null;lastSequence=0;markerKey='';signingIn=false;ui['f1-password'].value='';localStopAudio();rows.clear();ui.drivers.replaceChildren();ui['event-list'].replaceChildren();ui['turn-markers'].replaceChildren();ui['turn-directory'].replaceChildren();ui['driver-count'].textContent='00 CARS';ui['driver-detail'].textContent='Connect to the server to view a race.';ui['driver-timing'].hidden=true;ui['event-count'].textContent='';ui['race-title'].textContent='Your race awaits';ui['lap-label'].textContent='TRACK VIEW';ui.empty.hidden=false;ui.empty.querySelector('h3').textContent='Connect to your server';ui.empty.querySelector('p').textContent='The UI connects using its server configuration.';ui['api-connect'].hidden=false;enabled(false);status(message);
 }
 function command(path,body,method='POST'){
   const own=epoch,client=api,id=viewId;
@@ -144,7 +147,7 @@ function apply(snapshot){
   ui['track-source'].textContent=geometry?`Approximate session coordinates · reference car ${geometry.referenceLap.driverNumber}, lap ${geometry.referenceLap.lap}. ${geometry.sectors.length?'Sector colors follow recorded timing.':'Sector timing unavailable.'} ${geometry.corners.length?geometry.corners.length+' aligned turns · '+geometry.source+'.':''}`:'Waiting for a complete clean reference lap.';
   ui['timing-status'].textContent=live?'Direct F1 gaps · seconds or laps':'Recorded gaps · seconds or laps · follow the replay clock';
   ui['insights-status'].textContent=live?'Direct F1 feed · race control, pit transitions and radio when supplied.':Object.entries(state.availability).map(([name,v])=>`${name.replaceAll('_',' ')}: ${v.status}${v.count!==undefined?' ('+v.count+')':''}`).join(' · ');
-  status(state.message,['error','auth_required','stale'].includes(state.status));renderTable();renderNotebook();renderAudio(state.radio);
+  status(state.message,['error','auth_required','stale'].includes(state.status));renderTable();renderNotebook();renderAudio(state.radio);grid.sync(state,geometry);
 }
 function describe(car){return `${car.name} · Ahead: ${gap(car.timing.ahead)} · To P1: ${gap(car.timing.leader)} · ${car.timing.status}${car.timing.sampleTime!==null?' · Recorded '+new Date(car.timing.sampleTime).toISOString().slice(11,19)+' UTC':''}`;}
 function renderTable(){
@@ -172,16 +175,16 @@ function markers(project,w,h){
   for(const corner of geometry.corners){const [x,y]=project(corner.x,corner.y),angle=corner.angle*Math.PI/180;let lx=Math.max(18,Math.min(w-18,x+Math.cos(angle)*28)),ly=Math.max(18,Math.min(h-48,y-Math.sin(angle)*28));for(let i=0;i<12&&placed.some(p=>Math.hypot(p[0]-lx,p[1]-ly)<27);i++)ly=Math.max(18,Math.min(h-48,ly+(i%2?-1:1)*(30+i*4)));placed.push([lx,ly]);const button=node('button','turn-marker'+(settings.overlays.names?' named':''),corner.id);button.style.left=lx+'px';button.style.top=ly+'px';button.title=`Turn ${corner.id} · ${corner.name||'Name not supplied'}`;button.setAttribute('aria-pressed',String(settings.selectedTurn===corner.id));button.onclick=()=>patch({selectedTurn:corner.id});if(corner.name){button.append(node('span','turn-name',corner.name));if(lx>w*.55)button.classList.add('label-left');}ui['turn-markers'].append(button);const entry=node('button','turn-entry');entry.setAttribute('aria-pressed',String(settings.selectedTurn===corner.id));entry.append(node('b','',`T${corner.id}`),node('span','',corner.name||'Name not supplied'));entry.onclick=button.onclick;ui['turn-directory'].append(entry);}
 }
 function draw(){
-  const box=ui.map.getBoundingClientRect(),dpr=devicePixelRatio||1,w=box.width,h=box.height;if(ui.map.width!==Math.round(w*dpr)||ui.map.height!==Math.round(h*dpr)){ui.map.width=Math.round(w*dpr);ui.map.height=Math.round(h*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const at=motion.now(),box=ui.map.getBoundingClientRect(),dpr=devicePixelRatio||1,w=box.width,h=box.height;if(ui.map.width!==Math.round(w*dpr)||ui.map.height!==Math.round(h*dpr)){ui.map.width=Math.round(w*dpr);ui.map.height=Math.round(h*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
   if(state&&geometry?.points.length){const track=geometry.points,xs=track.map(p=>p[1]),ys=track.map(p=>p[2]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys),scale=Math.min(Math.max(1,w-145)/(maxX-minX||1),Math.max(1,h-145)/(maxY-minY||1)),project=(x,y)=>[(x-(minX+maxX)/2)*scale+w/2,h/2-(y-(minY+maxY)/2)*scale];ctx.lineJoin='round';ctx.lineCap='round';stroke(track,project,'#0c1012',17,true);stroke(track,project,'#465257',11,true);if(state.settings.overlays.sectors&&geometry.sectors.length)for(const sector of geometry.sectors)stroke(sector.points,project,sector.color,8);else stroke(track,project,'#657174',1,true);markers(project,w,h);
     const [sx,sy]=project(track[0][1],track[0][2]);ctx.fillStyle='#d9e0db';ctx.fillRect(sx-3,sy-3,6,6);ctx.font='9px system-ui';ctx.fillText('S/F',sx+10,sy-10);
-    for(const car of [...state.cars].sort((a,b)=>Number(a.selected)-Number(b.selected))){const location=state.source==='live'&&(!car.location||state.status!=='streaming')?null:motion.location(car.driverNumber);if(!location)continue;const [x,y]=project(location.x,location.y);ctx.globalAlpha=state.settings.selectedDriver !== null && !car.selected ? .22 : location.stale ? .45 : 1;ctx.fillStyle=car.color;ctx.strokeStyle='#101315';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,car.selected?7:5,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.font='600 9px system-ui';ctx.fillStyle='#f1f5ee';ctx.strokeStyle='#121719';ctx.lineWidth=3;ctx.strokeText(car.abbreviation,x+9,y-7);ctx.fillText(car.abbreviation,x+9,y-7);ctx.globalAlpha=1;}
+    dots2d.clear();for(const car of [...state.cars].sort((a,b)=>Number(a.selected)-Number(b.selected))){const location=state.source==='live'&&(!car.location||state.status!=='streaming')?null:motion.location(car.driverNumber,at);if(!location)continue;const [x,y]=project(location.x,location.y);dots2d.set(car.driverNumber,[x,y]);ctx.globalAlpha=state.settings.selectedDriver !== null && !car.selected ? .22 : location.stale ? .45 : 1;ctx.fillStyle=car.color;ctx.strokeStyle='#101315';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,car.selected?7:5,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.font='600 9px system-ui';ctx.fillStyle='#f1f5ee';ctx.strokeStyle='#121719';ctx.lineWidth=3;ctx.strokeText(car.abbreviation,x+9,y-7);ctx.fillText(car.abbreviation,x+9,y-7);ctx.globalAlpha=1;}
   }
-  if(state){const sample=motion.time();if(sample.time!==null){const t=sample.time;
+  if(state){const sample=motion.time(at);if(sample.time!==null){const t=sample.time;
     if(state.source==='history'){ui.elapsed.textContent=duration(t-state.playback.start);if(document.activeElement!==ui.seek)ui.seek.value=(t-state.playback.start)/(state.playback.end-state.playback.start)*1000;ui.clock.textContent='SESSION TIME · '+new Date(t).toISOString().slice(11,19)+' UTC';}
     else ui['live-utc'].textContent=new Date(t).toISOString().slice(11,19)+' UTC';
     ui.map.dataset.buffering=String(sample.buffering);ui.map.dataset.renderTime=String(t);ui.map.dataset.motionPackets=String(motion.receivedPackets);ui.map.dataset.drawnFrames=String(+(ui.map.dataset.drawnFrames||0)+1);if(ui.map.dataset.lastDrawTime!==String(t)){ui.map.dataset.distinctFrames=String(+(ui.map.dataset.distinctFrames||0)+1);ui.map.dataset.lastDrawTime=String(t);}
   }}
-  requestAnimationFrame(draw);
+  grid.frame(at);requestAnimationFrame(draw);
 }
 lock('Connecting using UI configuration…');requestAnimationFrame(draw);connect();
