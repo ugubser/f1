@@ -14,16 +14,23 @@ const base='http://127.0.0.1:'+server.address().port+'/api/v1';
 let serverMaxBuffered=0,serverCloses=[];const streams=server.services.streams,connection=streams.connection.bind(streams);
 streams.connection=ws=>{const send=ws.send.bind(ws),close=ws.close.bind(ws);ws.send=(data,cb)=>{send(data,cb);serverMaxBuffered=Math.max(serverMaxBuffered,ws.bufferedAmount);};ws.close=(code,reason)=>{serverCloses.push(code);close(code,reason);};connection(ws);};
 async function api(path,body){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error?.message||'Benchmark request failed');return data;}
+async function patch(path,body){const r=await fetch(base+path,{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error('Benchmark PATCH failed');return r.json();}
 const results=[];
 try{
  const view=await api('/views',{source:'history',raceId:9590});let ready=view;
  const deadline=Date.now()+180000;while(ready.status==='loading'&&Date.now()<deadline){await new Promise(r=>setTimeout(r,250));ready=await api('/views/'+view.id);}
  if(ready.status!=='ready')throw Error('Real Monza data could not be loaded.');
+ // Worst-case HUD payload: four camera drivers plus the selected driver (5 telemetry streams).
+ // Wait for the optional background car_data so it cannot force replacement windows mid-run.
+ const hud=deadline+120000;while(ready.availability.car_data?.status==='loading'&&Date.now()<hud){await new Promise(r=>setTimeout(r,500));ready=await api('/views/'+view.id);}
+ const telemetry=ready.availability.car_data;
+ const others=ready.cars.map(c=>c.driverNumber).filter(n=>n!==81).slice(0,4);
+ await patch('/views/'+view.id,{selectedDriver:81,cameras:others.map((driver,i)=>({id:'cam-'+(i+1),mode:i%2?'chase':'onboard',driver}))});
  for(const speed of [1,10,60]){
   await api('/views/'+view.id+'/playback',{action:'seek',time:ready.playback.start+(ready.playback.end-ready.playback.start)*.4});
   await api('/views/'+view.id+'/playback',{action:'speed',speed});
   const buffer=new MotionBuffer(),ticket=await api('/views/'+view.id+'/stream-ticket',{}),ws=new WebSocket(base.replace('/api/v1','').replace('http:','ws:')+ticket.url);
-  let current=null,messages=0,bytes=0,chunks=0,error=null,minRtt=Infinity,finished=false,largest=0;serverMaxBuffered=0;serverCloses=[];
+  let current=null,messages=0,bytes=0,chunks=0,error=null,minRtt=Infinity,finished=false,largest=0,telemetryRows=0,telemetryCars=0;serverMaxBuffered=0;serverCloses=[];
   const ping=()=>ws.send(JSON.stringify({type:'ping',sentAt:performance.now()}));
   ws.on('error',e=>{error=e;});ws.on('close',()=>{if(!finished)error=new Error('Benchmark stream closed unexpectedly.');});
   ws.on('open',()=>{ws.send(JSON.stringify({type:'auth',ticket:ticket.ticket}));ping();});
@@ -32,7 +39,7 @@ try{
     const m=JSON.parse(raw);messages++;bytes+=Buffer.byteLength(raw);largest=Math.max(largest,Buffer.byteLength(raw));
     if(m.type==='pong'){const now=performance.now(),rtt=now-m.sentAt;if(rtt<minRtt){minRtt=rtt;buffer.setOffset(m.serverTime-(m.sentAt+now)/2);}return;}
     if(m.type==='snapshot'||m.type==='state'){current=mergeState(current,m);buffer.state(current);}
-    else if(m.type==='coordinates'){buffer.coordinates(m);chunks++;}
+    else if(m.type==='coordinates'){buffer.coordinates(m);chunks++;for(const car of m.cars)if(car.telemetry){telemetryRows+=car.telemetry.length;telemetryCars=Math.max(telemetryCars,m.cars.filter(c=>c.telemetry).length);}}
     else if(m.type==='error')throw Error(m.code);
     ws.send(JSON.stringify({type:'ack',sequence:m.sequence}));
    }catch(e){error=e;}
@@ -46,8 +53,8 @@ try{
   }
   const elapsed=performance.now()-t0,last=buffer.time().time;
   finished=true;ws.terminate();await api('/views/'+view.id+'/playback',{action:'pause'});
-  const result={speed,elapsedSeconds:+(elapsed/1000).toFixed(2),replaySeconds:+((last-first)/1000).toFixed(2),renderFrames:frames,distinctPositionFrames:changed,bufferUnderruns:underruns,coordinateChunks:chunks,networkMessages:messages,networkKB:+(bytes/1024).toFixed(1),largestMessageKB:+(largest/1024).toFixed(1),serverMaxBufferedKB:+(serverMaxBuffered/1024).toFixed(1),slowConsumerCloses:serverCloses.filter(c=>c===1013).length,controlMs:+commandMs.toFixed(1)};results.push(result);console.log(JSON.stringify(result));
+  const result={speed,elapsedSeconds:+(elapsed/1000).toFixed(2),replaySeconds:+((last-first)/1000).toFixed(2),renderFrames:frames,distinctPositionFrames:changed,bufferUnderruns:underruns,coordinateChunks:chunks,networkMessages:messages,networkKB:+(bytes/1024).toFixed(1),largestMessageKB:+(largest/1024).toFixed(1),serverMaxBufferedKB:+(serverMaxBuffered/1024).toFixed(1),slowConsumerCloses:serverCloses.filter(c=>c===1013).length,telemetryCars,telemetryRows,controlMs:+commandMs.toFixed(1)};results.push(result);console.log(JSON.stringify(result));
   if(result.slowConsumerCloses||underruns||changed<frames*.95||Math.abs((last-first)/elapsed-speed)>.1)throw Error(`Playback benchmark failed at ${speed}x.`);
  }
- if(process.env.F1_BENCHMARK_OUTPUT)await writeFile(process.env.F1_BENCHMARK_OUTPUT,JSON.stringify({session:9590,results},null,2));
+ if(process.env.F1_BENCHMARK_OUTPUT)await writeFile(process.env.F1_BENCHMARK_OUTPUT,JSON.stringify({session:9590,carData:telemetry,results},null,2));
 }finally{server.shutdown();await new Promise(r=>server.close(r));}

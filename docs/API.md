@@ -66,6 +66,8 @@ Camera windows are view settings (owner decision D4), returned as `settings.came
 | `fov` | vertical degrees 15..110, default 55 |
 | `hud` | boolean, default true: telemetry HUD in onboard/chase tiles |
 
+HUD telemetry (OpenF1 `car_data`: speed, gear, rpm, throttle, brake, server-decoded DRS) is delivered in replay `coordinates` packets for the camera drivers plus the selected driver (else the P1 car); see [STREAMING.md](STREAMING.md#hud-telemetry-replay-only). It loads in the background after the race is ready and never delays it. `availability.car_data` reports `{status, completed, total, missingDrivers}`: `loading`, `available`, `empty` or `error` for replay, `unavailable` for live.
+
 Coordinates must be finite with absolute value at most 1e7. Unknown fields are rejected, and an invalid list leaves the whole PATCH unapplied. Changing cameras increments `revision` but never the `motionEpoch`, so buffered motion continues. Cameras are kept when the race or source changes; positions are session units of the current circuit, so a client should re-place trackside cameras after switching circuits. A drag stays local while in progress and is committed through PATCH when released; tile maximize and layout remain local presentation.
 
 Views expire after 30 minutes without requests; active streams keep views alive. Maximum 12 views and 24 streams per process. DELETE a view when done. Views do not survive restart. The API returns `VIEW_NOT_FOUND`; recreate the view explicitly. `/system.instanceId` identifies server restarts. Live collection never automatically starts on boot.

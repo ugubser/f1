@@ -7,11 +7,16 @@ export const points=Array.from({length:241},(_,i)=>[start+i*1000,Math.cos(i/80*2
 // Driver 2 leaves the fixture line by 60 units (6 m) around its pit record at +100 s.
 const pitOffset=i=>i<96||i>124?0:i===96||i===124?15:i===97||i===123?30:60;
 export const pitPoints=points.map(([t,x,y,z],i)=>{const k=(100+pitOffset(i))/100;return [t,x*k,y*k,z];});
+// Explicit car_data fixture in the compact cache format [t,speed,gear,rpm,throttle,brake,drsCode]
+// every 250 ms; driver 3 has no telemetry. DRS codes cycle through off, eligible and open values.
+export const drsCodes=[0,1,8,10,12,14];
+export const carData=Array.from({length:961},(_,i)=>[start+i*250,100+i%200,1+i%8,10000+i,i%101,i%2?100:0,drsCodes[i%6]]);
 export function fixtureLoad({fail=[],empty=[],calls=[]}={}){
  return async(endpoint,params)=>{calls.push([endpoint,params]);if(fail.includes(endpoint))throw Error('unit-private-upstream');if(empty.includes(endpoint))return [];
   if(endpoint==='sessions')return [session];if(endpoint==='drivers')return drivers;
   if(endpoint==='laps')return drivers.flatMap(d=>[{driver_number:d.driver_number,date_start:new Date(start).toISOString(),lap_number:1,lap_duration:80},{...lap,driver_number:d.driver_number}]);
   if(endpoint==='position')return drivers.map((d,i)=>({driver_number:d.driver_number,date:new Date(start).toISOString(),position:i+1}));
+  if(endpoint==='car_data')return params.driver_number==='3'?[]:carData.map(r=>[...r]);
   if(endpoint==='location')return params.driver_number==='2'?pitPoints:points;
   if(endpoint==='stints')return drivers.map(d=>({driver_number:d.driver_number,stint_number:1,compound:'HARD',lap_start:1,lap_end:2,tyre_age_at_start:0}));
   if(endpoint==='intervals')return drivers.map((d,i)=>({driver_number:d.driver_number,date:new Date(start+100000).toISOString(),interval:i?1.5:0,gap_to_leader:i*1.5}));

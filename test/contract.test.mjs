@@ -41,13 +41,13 @@ test('WebSocket wire snapshots, deltas, coordinates and clock replies conform to
  const token='unit-contract-stream-token-at-least-32-characters',server=createReplayServer({apiToken:token,...fakeLive(),load:fixtureLoad(),loadCircuit:fixtureCircuit});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;let ws;
  try{
-  const v=server.services.views.create({source:'history',raceId:9590});await ready(server.services.views,v.id);
+  const v=server.services.views.create({source:'history',raceId:9590});await ready(server.services.views,v.id);await v.history.telemetryTask;
   const response=await fetch(base+'/api/v1/views/'+v.id+'/stream-ticket',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'});const ticket=await response.json();check(ticket,schemas.StreamTicket);
   const seen=new Set(),errors=[];ws=new WebSocket(base.replace('http:','ws:')+ticket.url);ws.on('error',()=>{});
-  ws.on('message',raw=>{const m=JSON.parse(raw);try{check(m,schemas[{snapshot:'SnapshotMessage',state:'StateMessage',coordinates:'Coordinates',pong:'StreamPong',error:'StreamError'}[m.type]]);seen.add(m.type);}catch(e){errors.push(e);}if(m.sequence)ws.send(JSON.stringify({type:'ack',sequence:m.sequence}));});
+  ws.on('message',raw=>{const m=JSON.parse(raw);if(m.type==='coordinates'&&m.cars.some(c=>c.telemetry?.length))seen.add('telemetry');try{check(m,schemas[{snapshot:'SnapshotMessage',state:'StateMessage',coordinates:'Coordinates',pong:'StreamPong',error:'StreamError'}[m.type]]);seen.add(m.type);}catch(e){errors.push(e);}if(m.sequence)ws.send(JSON.stringify({type:'ack',sequence:m.sequence}));});
   ws.on('open',()=>{ws.send(JSON.stringify({type:'auth',ticket:ticket.ticket}));ws.send(JSON.stringify({type:'ping',sentAt:1}));});
   for(let i=0;i<100&&!seen.has('coordinates');i++)await new Promise(r=>setTimeout(r,5));
   server.services.views.patch(v.id,{selectedDriver:2});for(let i=0;i<100&&!seen.has('state');i++)await new Promise(r=>setTimeout(r,5));
-  if(errors.length)throw errors[0];for(const type of ['snapshot','coordinates','state','pong'])assert.ok(seen.has(type),type);
+  if(errors.length)throw errors[0];for(const type of ['snapshot','coordinates','state','pong','telemetry'])assert.ok(seen.has(type),type);
  }finally{ws?.terminate();server.shutdown();await new Promise(r=>server.close(r));}
 });

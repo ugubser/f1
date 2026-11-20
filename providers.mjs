@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {compactLocations} from './domain/replay.mjs';
+import {compactCarData} from './domain/telemetry.mjs';
 import {cornerNames} from './track-names.mjs';
 const ROOT=fileURLToPath(new URL('.',import.meta.url));
 const CACHE=path.join(ROOT,'.cache');
@@ -13,7 +14,8 @@ const inflight=new Map();
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 // Bump an endpoint's tag when its compacted cache format changes so older files
 // are never reused. location-v2: full source rate (v1 files were thinned to 800 ms).
-const CACHE_VERSION={location:'location-v2'};
+// car_data-v1: compact rows [t, speed, gear, rpm, throttle, brake, drsCode].
+const CACHE_VERSION={location:'location-v2',car_data:'car_data-v1'};
 // One outgoing request at a time, below the free API's per-second limit.
 export function upstream(endpoint,params) {
   const query=new URLSearchParams(params).toString(), key=endpoint+'?'+query;
@@ -33,6 +35,7 @@ export function upstream(endpoint,params) {
         let data=await res.json();
         if(!Array.isArray(data)) throw new Error('Unexpected OpenF1 response.');
         if(endpoint==='location') data=compactLocations(data);
+        if(endpoint==='car_data') data=compactCarData(data);
         // Cache completed historical sessions only. Never cache empty results.
         if(data.length) await writeFile(filename,gzipSync(JSON.stringify(data)));
         return data;

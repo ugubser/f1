@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {positionAt, upperBound, lapAt, tireAt, timingAt, eventsAt} from '../domain/replay.mjs';
 import {liveTimingAt} from '../domain/live.mjs';
+import {telemetryDrivers, telemetryWindow} from '../domain/telemetry.mjs';
 import {HistoryService, makeGeometry} from './history.mjs';
 import {ApiError, invalid, objectBody, positiveId} from '../api-errors.mjs';
 
@@ -145,7 +146,7 @@ export class ViewService {
       rendering: {maxGapMs: 5000, staleAfterMs: 2000, liveBufferMs: 300},
       settings: {selectedDriver: v.selectedDriver, selectedTurn: v.selectedTurn, notifications: v.notifications, overlays: {...v.overlays}, cameras: v.cameras}, radio: v.radio,
       progress: {completed: d?.completed ?? 0, total: d?.total ?? 0, missingDrivers: d?.errors ?? []}, cars, lap: live ? live.lapCount.CurrentLap ?? null : cars.reduce((max,c) => Math.max(max,c.lap ?? 0),0), totalLaps: live ? live.lapCount.TotalLaps ?? null : d?.laps.length ? Math.max(...d.laps.map(l => l.lap_number)) : null,
-      events: {total: events.length, items: events.slice(eventOffset,eventOffset + eventLimit)}, geometryRevision, ...(geometry ? {geometry: shape} : {}), availability: live ? {turns: {status: 'unavailable', message: 'Turn markers are not supplied by the live feed.'}} : d?.availability ?? {}};
+      events: {total: events.length, items: events.slice(eventOffset,eventOffset + eventLimit)}, geometryRevision, ...(geometry ? {geometry: shape} : {}), availability: live ? {turns: {status: 'unavailable', message: 'Turn markers are not supplied by the live feed.'}, car_data: {status: 'unavailable', completed: 0, total: 0, missingDrivers: [], message: 'Car telemetry is not supplied for live views.'}} : {...d?.availability}};
   }
   motionEpoch(v, live) {
     return v.source === 'history' ? `h/${v.history?.id ?? 'empty'}/${v.motionRevision}` : `l/${live?.session.key ?? 'empty'}/${this.live.generation ?? 0}/${live?.connection.state ?? 'disconnected'}/${v.motionRevision}`;
@@ -153,17 +154,23 @@ export class ViewService {
   coordinates(id, snapshot, cursor = null) {
     const v = this.get(id), epoch = snapshot.motionEpoch;
     if (v.source !== snapshot.source || v.revision !== snapshot.revision) return null;
-    const replace = !cursor || cursor.epoch !== epoch || v.source === 'history' && (cursor.until === null || cursor.until < snapshot.playback.time);
+    // Telemetry goes only to the HUD set; a change of that set (or newly loaded
+    // telemetry for it) forces a replace packet within the same motion epoch.
+    const leaders = snapshot.cars.filter(c => c.position === 1), d = v.history;
+    const wanted = v.source === 'history' && d?.telemetry ? telemetryDrivers({cameras: v.cameras, selectedDriver: v.selectedDriver, leader: leaders.length === 1 ? leaders[0].driverNumber : null}).filter(n => d.telemetry.has(n)) : [];
+    const telemetryKey = wanted.join(',');
+    const replace = !cursor || cursor.epoch !== epoch || v.source === 'history' && (cursor.until === null || cursor.until < snapshot.playback.time || cursor.telemetry !== undefined && cursor.telemetry !== telemetryKey);
     if (v.source === 'history') {
-      const d = v.history, time = snapshot.playback.time;
-      if (d?.status !== 'ready' || time === null) return {epoch, replace: true, from: null, until: null, latest: null, cars: []};
+      const time = snapshot.playback.time;
+      if (d?.status !== 'ready' || time === null) return {epoch, replace: true, from: null, until: null, latest: null, cars: [], telemetryKey};
       const speed = snapshot.playback.playing ? snapshot.playback.speed : 1;
       if (!replace && (cursor.until >= d.end || cursor.until - time > speed * 1500)) return null;
       const from = replace ? Math.max(d.start, time - 5000) : cursor.until;
       const until = Math.min(d.end, time + Math.max(3000, speed * 2500));
       const cars = [...d.points].map(([driverNumber, points]) => ({driverNumber,
-        points: points.slice(Math.max(0, upperBound(points, from) - 1), Math.min(points.length, upperBound(points, until) + 1))}));
-      return {epoch, replace, from, until, latest: until, cars};
+        points: points.slice(Math.max(0, upperBound(points, from) - 1), Math.min(points.length, upperBound(points, until) + 1)),
+        ...(wanted.includes(driverNumber) ? {telemetry: telemetryWindow(d.telemetry.get(driverNumber), from, until)} : {})}));
+      return {epoch, replace, from, until, latest: until, cars, telemetryKey};
     }
     if (snapshot.status !== 'streaming') return replace ? {epoch, replace: true, from: null, until: null, latest: null, cars: []} : null;
     const cars = []; let latest = null;

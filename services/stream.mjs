@@ -30,7 +30,10 @@ export function stateDelta(previous, next) {
 }
 
 export class StreamService {
-  constructor({views, now = Date.now, ticketMs = 10000, maxSockets = 24, maxBufferedBytes = 512 * 1024, maxUnacked = 32, authMs = 3000} = {}) {
+  // maxBufferedBytes must exceed the largest legitimate packet: a full-rate 60x
+  // replace window with five HUD telemetry streams measures ~0.5 MB on Monza, so
+  // a 512 KiB limit would close a consumer that is merely receiving one window.
+  constructor({views, now = Date.now, ticketMs = 10000, maxSockets = 24, maxBufferedBytes = 1024 * 1024, maxUnacked = 32, authMs = 3000} = {}) {
     Object.assign(this,{views,now,ticketMs,maxSockets,maxBufferedBytes,maxUnacked,authMs});
     this.tickets = new Map(); this.wss = new WebSocketServer({noServer:true,maxPayload:2048,perMessageDeflate:false});
   }
@@ -88,12 +91,13 @@ export class StreamService {
           if (Object.keys(delta.changes).length || delta.cars.upsert.length || delta.cars.remove.length)
             if (!send({type:'state',epoch:snapshot.motionEpoch,viewSequence:snapshot.sequence,serverTime:snapshot.serverTime,revision:snapshot.revision,...delta})) return;
         }
-        const coordinates = this.views.coordinates(id,snapshot,cursor);
-        if (coordinates) {
+        const result = this.views.coordinates(id,snapshot,cursor);
+        if (result) {
+          const {telemetryKey,...coordinates} = result;
           if (!send({type:'coordinates',...coordinates})) return;
           const drivers = coordinates.replace ? new Map() : cursor.drivers;
           for (const car of coordinates.cars) if (car.points.length) drivers.set(car.driverNumber,car.points.at(-1)[0]);
-          cursor = {epoch:coordinates.epoch,until:coordinates.until,drivers};
+          cursor = {epoch:coordinates.epoch,until:coordinates.until,drivers,telemetry:telemetryKey ?? ''};
         }
         previous = {...snapshot,_liveRevision:liveRevision,_connection:this.views.live.connection?.state};
         lastStateAt = this.now(); force = false;

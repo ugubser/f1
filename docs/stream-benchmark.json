@@ -1,6 +1,13 @@
 {
   "session": 9590,
   "samples": "full source rate (location-v2 cache; median 240 ms)",
+  "hud": "selectedDriver 81 plus four camera drivers: five car_data telemetry streams (worst case)",
+  "carData": {
+    "status": "available",
+    "completed": 20,
+    "total": 20,
+    "missingDrivers": []
+  },
   "results": [
     {
       "speed": 1,
@@ -10,42 +17,48 @@
       "distinctPositionFrames": 373,
       "bufferUnderruns": 0,
       "coordinateChunks": 5,
-      "networkMessages": 30,
-      "networkKB": 134.2,
-      "largestMessageKB": 45,
+      "networkMessages": 32,
+      "networkKB": 134.3,
+      "largestMessageKB": 36.5,
       "serverMaxBufferedKB": 0,
       "slowConsumerCloses": 0,
-      "controlMs": 2.4
+      "telemetryCars": 5,
+      "telemetryRows": 410,
+      "controlMs": 2.1
     },
     {
       "speed": 10,
       "elapsedSeconds": 6.01,
-      "replaySeconds": 60.05,
+      "replaySeconds": 60.09,
       "renderFrames": 373,
       "distinctPositionFrames": 373,
       "bufferUnderruns": 0,
       "coordinateChunks": 7,
-      "networkMessages": 54,
-      "networkKB": 357.3,
-      "largestMessageKB": 75.6,
+      "networkMessages": 55,
+      "networkKB": 403.2,
+      "largestMessageKB": 97.1,
       "serverMaxBufferedKB": 0,
       "slowConsumerCloses": 0,
-      "controlMs": 2.4
+      "telemetryCars": 5,
+      "telemetryRows": 1670,
+      "controlMs": 1.9
     },
     {
       "speed": 60,
-      "elapsedSeconds": 6.01,
-      "replaySeconds": 360.82,
-      "renderFrames": 374,
-      "distinctPositionFrames": 374,
+      "elapsedSeconds": 6,
+      "replaySeconds": 360.11,
+      "renderFrames": 372,
+      "distinctPositionFrames": 372,
       "bufferUnderruns": 0,
       "coordinateChunks": 7,
-      "networkMessages": 55,
-      "networkKB": 1458.2,
-      "largestMessageKB": 382.7,
+      "networkMessages": 56,
+      "networkKB": 1691.9,
+      "largestMessageKB": 493.9,
       "serverMaxBufferedKB": 0,
       "slowConsumerCloses": 0,
-      "controlMs": 2.1
+      "telemetryCars": 5,
+      "telemetryRows": 8770,
+      "controlMs": 2
     }
   ],
   "date": "2026-11-20",
@@ -55,6 +68,32 @@
     "data": "actual cached OpenF1 Monza 2024",
     "transport": "local REST controls + WebSocket JSON buffering",
     "scope": "one isolated benchmark view; no F1 live connection"
+  },
+  "withoutTelemetry": {
+    "note": "M0 run, same full-rate samples, no telemetry field",
+    "results": [
+      {
+        "speed": 1,
+        "networkKB": 134.2,
+        "largestMessageKB": 45,
+        "bufferUnderruns": 0,
+        "slowConsumerCloses": 0
+      },
+      {
+        "speed": 10,
+        "networkKB": 357.3,
+        "largestMessageKB": 75.6,
+        "bufferUnderruns": 0,
+        "slowConsumerCloses": 0
+      },
+      {
+        "speed": 60,
+        "networkKB": 1458.2,
+        "largestMessageKB": 382.7,
+        "bufferUnderruns": 0,
+        "slowConsumerCloses": 0
+      }
+    ]
   },
   "previous": {
     "date": "2026-11-10",

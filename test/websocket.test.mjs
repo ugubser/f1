@@ -91,3 +91,18 @@ test('reconnecting the same view starts with fresh geometry, current clock and r
   const snapshot=second.messages.find(m=>m.type==='snapshot'),coordinates=second.messages.find(m=>m.type==='coordinates');assert.equal(snapshot.sequence,1);assert.equal(snapshot.state.motionEpoch,initial.motionEpoch);assert.ok(snapshot.state.sequence>initial.sequence);assert.ok(snapshot.state.playback.time>initial.playback.time);assert.ok(snapshot.state.geometry);assert.equal(coordinates.replace,true);
  });
 });
+test('replay coordinates carry HUD telemetry; a camera change forces a replacement window in the same epoch',async()=>{
+ await setup(async({api,connect,server})=>{
+  const v=await api('/views',{source:'history',raceId:9590});await ready(server.services.views,v.id);await server.services.views.get(v.id).history.telemetryTask;
+  await api('/views/'+v.id+'/playback',{action:'seek',time:start+100000});const t=await api('/views/'+v.id+'/stream-ticket',{}),s=await connect(t.ticket);
+  await until(()=>s.messages.some(m=>m.type==='coordinates'&&m.cars.length));const first=s.messages.find(m=>m.type==='coordinates'&&m.cars.length);
+  assert.deepEqual(first.cars.filter(c=>c.telemetry).map(c=>c.driverNumber),[1]);assert.equal('telemetryKey' in first,false);
+  const patched=await api('/views/'+v.id,{cameras:[{id:'hud',mode:'onboard',driver:2}]},'PATCH');assert.equal(patched.motionEpoch,first.epoch);
+  await until(()=>s.messages.some(m=>m.type==='coordinates'&&m.sequence>first.sequence&&m.cars.some(c=>c.driverNumber===2&&c.telemetry)));
+  const next=s.messages.find(m=>m.type==='coordinates'&&m.sequence>first.sequence&&m.cars.some(c=>c.driverNumber===2&&c.telemetry));assert.equal(next.replace,true);assert.equal(next.epoch,first.epoch);
+  assert.equal(s.messages.filter(m=>m.type==='snapshot').length,1);
+ });
+});
+test('the slow-consumer byte limit exceeds the largest legitimate full-rate replay window',()=>{
+ const streams=new StreamService({views:{get:()=>({})}});try{assert.equal(streams.maxBufferedBytes,1024*1024);assert.equal(streams.maxUnacked,32);}finally{streams.close();}
+});

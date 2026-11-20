@@ -1,5 +1,6 @@
 import {upstream, circuitMetadata} from '../providers.mjs';
 import {referenceLap, sectorsFromLap, alignCorners, buildEvents, indexIntervals, pitLaneFromStops} from '../domain/replay.mjs';
+import {telemetryStore} from '../domain/telemetry.mjs';
 import {ApiError, positiveId} from '../api-errors.mjs';
 
 export class HistoryService {
@@ -20,15 +21,48 @@ export class HistoryService {
     id = positiveId(id);
     let d = this.datasets.get(id);
     if (d?.status === 'cancelled' || d?.status === 'error') { this.datasets.delete(id); d = null; }
+    if (d?.status === 'ready') this.loadTelemetry(d);
     if (!d) {
       // Unreferenced datasets can be evicted; datasets in open views stay shared.
       for (const [key, old] of this.datasets) if (!old.refs && this.datasets.size >= 3) { old.cancelled = true; this.datasets.delete(key); }
-      d = {id, refs: 0, status: 'loading', cancelled: false, completed: 0, total: 0, message: 'Loading race metadata…', errors: [], availability: {}, drivers: [], laps: [], points: new Map(), positions: new Map(), driverLaps: new Map(), stints: new Map(), intervals: new Map(), events: [], geometry: null, geometryRevision: 0, start: null, end: null};
+      d = {id, refs: 0, status: 'loading', cancelled: false, completed: 0, total: 0, message: 'Loading race metadata…', errors: [], availability: {}, drivers: [], laps: [], points: new Map(), positions: new Map(), driverLaps: new Map(), stints: new Map(), intervals: new Map(), events: [], geometry: null, geometryRevision: 0, start: null, end: null, telemetry: new Map(), telemetryDone: new Set(), telemetryMissing: [], telemetryErrors: 0, telemetryRunning: false, telemetryHalt: false};
       this.datasets.set(id, d); d.task = this.prepare(d);
     }
     d.refs++; return d;
   }
-  release(d) { if (!d) return; d.refs = Math.max(0, d.refs - 1); if (!d.refs && d.status === 'loading') { d.cancelled = true; d.status = 'cancelled'; } }
+  release(d) {
+    if (!d) return; d.refs = Math.max(0, d.refs - 1);
+    if (!d.refs && d.status === 'loading') { d.cancelled = true; d.status = 'cancelled'; }
+    // An unreferenced ready dataset stops dispatching car_data; acquire resumes it.
+    if (!d.refs) d.telemetryHalt = true;
+  }
+  // Optional HUD telemetry (D3): starts only after the race is ready, never
+  // delays it, and goes car by car through the same rate-limited loader.
+  loadTelemetry(d) {
+    d.telemetryHalt = false;
+    if (d.telemetryRunning || d.telemetryDone.size >= d.drivers.length) return;
+    d.telemetryRunning = true;
+    const stop = () => d.cancelled || d.telemetryHalt;
+    d.telemetryTask = (async () => {
+      for (const driver of d.drivers) {
+        const n = driver.driver_number;
+        if (stop()) return;
+        if (d.telemetryDone.has(n)) continue;
+        try {
+          const rows = await this.load('car_data', {session_key: String(d.id), driver_number: String(n)});
+          if (d.cancelled) return;
+          if (rows.length) d.telemetry.set(n, telemetryStore(rows)); else d.telemetryMissing.push(n);
+        } catch { if (d.cancelled) return; d.telemetryMissing.push(n); d.telemetryErrors++; }
+        d.telemetryDone.add(n); this.telemetryAvailability(d);
+      }
+    })().finally(() => { d.telemetryRunning = false; });
+  }
+  telemetryAvailability(d) {
+    const completed = d.telemetryDone.size, total = d.drivers.length;
+    const status = completed < total ? 'loading' : d.telemetry.size ? 'available' : d.telemetryErrors ? 'error' : 'empty';
+    // Replace, never mutate, so stream deltas see the change.
+    d.availability = {...d.availability, car_data: {status, completed, total, missingDrivers: [...d.telemetryMissing].sort((a,b) => a-b), ...(status === 'error' ? {message: 'Telemetry could not be loaded.'} : {})}};
+  }
   async prepare(d) {
     const active = () => !d.cancelled;
     const get = async endpoint => { if (!active()) return []; return this.load(endpoint, {session_key: String(d.id)}); };
@@ -82,6 +116,7 @@ export class HistoryService {
       }
       if (!d.points.size) throw Error('No car position data is available for this race.');
       d.status = 'ready'; d.message = `${session.circuit_short_name} ready · ${d.points.size}/${d.total} cars${d.errors.length ? ' · some positions unavailable' : ''}.`;
+      this.telemetryAvailability(d); if (d.refs) this.loadTelemetry(d);
     } catch { if (active()) { d.status = 'error'; d.message = 'Could not load this completed race. Retry or choose another race.'; } }
   }
   clip(id) { for (const d of this.datasets.values()) { const event = d.events.find(e => e.clipId === id); if (event) return event; } return null; }
