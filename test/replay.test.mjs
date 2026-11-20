@@ -6,3 +6,7 @@ test('missing samples and retired cars never interpolate through long gaps',()=>
 test('compaction sorts, removes zero/invalid coordinates and keeps endpoints',()=>{const r=[{date:'2024-01-01T00:00:02Z',x:20,y:30},{date:'2024-01-01T00:00:00Z',x:0,y:0},{date:'2024-01-01T00:00:01Z',x:10,y:20},{date:'bad',x:1,y:2}];assert.deepEqual(compactLocations(r).map(p=>p[1]),[10,20]);});
 test('lap selection does not expose future laps',()=>{const laps=[{date_start:'2024-01-01T00:00:00Z',lap_number:1},{date_start:'2024-01-01T00:01:30Z',lap_number:2}];assert.equal(lapAt(laps,Date.parse('2024-01-01T00:01:00Z')).lap_number,1);});
 test('track reconstruction rejects partial laps and accepts a closed lap',()=>{const base=Date.parse('2024-01-01T00:00:00Z');const points=Array.from({length:81},(_,i)=>[base+i*1000,Math.cos(i/80*2*Math.PI)*100,Math.sin(i/80*2*Math.PI)*100]);const laps=[{date_start:new Date(base).toISOString(),lap_number:2,lap_duration:80}];assert.equal(circuitFromLap(points,laps).length,81);assert.equal(circuitFromLap(points.slice(0,30),laps).length,0);});
+test('locations keep the full source rate and drop only invalid, placeholder and duplicate samples',()=>{
+ const rows=Array.from({length:10},(_,i)=>({date:new Date(Date.UTC(2024,0,1)+i*240).toISOString(),x:i+1,y:2,z:3}));
+ const compact=compactLocations([...rows,{...rows[3],x:99},{date:rows[4].date,x:0,y:0}]);assert.equal(compact.length,10);assert.deepEqual(compact.map(p=>p[1]),[1,2,3,4,5,6,7,8,9,10]);assert.deepEqual(compact[0].slice(1),[1,2,3]);
+});

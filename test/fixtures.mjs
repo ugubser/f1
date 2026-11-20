@@ -4,12 +4,15 @@ export const session={session_key:9590,session_name:'Race',circuit_key:39,circui
 export const drivers=[1,2,3].map(n=>({driver_number:n,full_name:'Fixture Driver '+n,name_acronym:'DR'+n,team_name:'Fixture Team',team_colour:'abcdef'}));
 export const lap={date_start:new Date(start+80000).toISOString(),lap_number:2,lap_duration:80,duration_sector_1:20,duration_sector_2:30,duration_sector_3:30,is_pit_out_lap:false};
 export const points=Array.from({length:241},(_,i)=>[start+i*1000,Math.cos(i/80*2*Math.PI)*100,Math.sin(i/80*2*Math.PI)*100,0]);
+// Driver 2 leaves the fixture line by 60 units (6 m) around its pit record at +100 s.
+const pitOffset=i=>i<96||i>124?0:i===96||i===124?15:i===97||i===123?30:60;
+export const pitPoints=points.map(([t,x,y,z],i)=>{const k=(100+pitOffset(i))/100;return [t,x*k,y*k,z];});
 export function fixtureLoad({fail=[],empty=[],calls=[]}={}){
  return async(endpoint,params)=>{calls.push([endpoint,params]);if(fail.includes(endpoint))throw Error('unit-private-upstream');if(empty.includes(endpoint))return [];
   if(endpoint==='sessions')return [session];if(endpoint==='drivers')return drivers;
   if(endpoint==='laps')return drivers.flatMap(d=>[{driver_number:d.driver_number,date_start:new Date(start).toISOString(),lap_number:1,lap_duration:80},{...lap,driver_number:d.driver_number}]);
   if(endpoint==='position')return drivers.map((d,i)=>({driver_number:d.driver_number,date:new Date(start).toISOString(),position:i+1}));
-  if(endpoint==='location')return points;
+  if(endpoint==='location')return params.driver_number==='2'?pitPoints:points;
   if(endpoint==='stints')return drivers.map(d=>({driver_number:d.driver_number,stint_number:1,compound:'HARD',lap_start:1,lap_end:2,tyre_age_at_start:0}));
   if(endpoint==='intervals')return drivers.map((d,i)=>({driver_number:d.driver_number,date:new Date(start+100000).toISOString(),interval:i?1.5:0,gap_to_leader:i*1.5}));
   if(endpoint==='race_control')return [{date:new Date(start+90000).toISOString(),message:'CAR 2 (DR2) INCIDENT',driver_number:2},{date:new Date(start+95000).toISOString(),message:'TRACK CLEAR'}];

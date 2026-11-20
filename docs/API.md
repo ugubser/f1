@@ -43,7 +43,30 @@ Each view owns source, historical race, playback clock, speed, selected driver, 
 }
 ```
 
-Set selections to null to clear them. PATCH does not replace omitted settings. Switching to live pauses the historical clock; switching back restores its position paused. Switching source does not disconnect the shared feed. Live turn availability stays explicit even if a client requests the turns setting. A new historical race resets driver/turn/radio selection. Invalid patches are rejected before changing state.
+Set selections to null to clear them. PATCH does not replace omitted settings. `cameras` is the exception inside a PATCH: the supplied array replaces the whole camera list (see below). Switching to live pauses the historical clock; switching back restores its position paused. Switching source does not disconnect the shared feed. Live turn availability stays explicit even if a client requests the turns setting. A new historical race resets driver/turn/radio selection. Invalid patches are rejected before changing state.
+
+### Camera windows
+
+Camera windows are view settings (owner decision D4), returned as `settings.cameras` and changed with `PATCH /views/{id}` `{"cameras":[...]}`. The array has 0..4 entries and replaces the whole list. A new view starts with `[{"id":"cam-1","mode":"chase","driver":null,"position":null,"target":null,"fov":55,"hud":true}]`.
+
+```json
+{"cameras":[
+  {"id":"tv-1","mode":"trackside","position":{"x":-1460,"y":-1860,"z":1900},"target":null,"fov":30},
+  {"id":"onboard","mode":"onboard","driver":16,"hud":true}
+]}
+```
+
+| Field | Rule |
+| --- | --- |
+| `id` | required, unique, `^[a-z0-9-]{1,16}$` |
+| `mode` | required: `orbit`, `birdseye`, `onboard`, `chase`, `trackside`, `director` |
+| `driver` | integer 1..999 or null (default). Null follows `selectedDriver`, else the P1 car |
+| `position` | `{x,y,z}` session units or null (default). Camera eye; required for `trackside`, optional for `orbit` |
+| `target` | `{x,y,z}` or null (default). Fixed look-at for `orbit`/`trackside`; null aims at the target car |
+| `fov` | vertical degrees 15..110, default 55 |
+| `hud` | boolean, default true: telemetry HUD in onboard/chase tiles |
+
+Coordinates must be finite with absolute value at most 1e7. Unknown fields are rejected, and an invalid list leaves the whole PATCH unapplied. Changing cameras increments `revision` but never the `motionEpoch`, so buffered motion continues. Cameras are kept when the race or source changes; positions are session units of the current circuit, so a client should re-place trackside cameras after switching circuits. A drag stays local while in progress and is committed through PATCH when released; tile maximize and layout remain local presentation.
 
 Views expire after 30 minutes without requests; active streams keep views alive. Maximum 12 views and 24 streams per process. DELETE a view when done. Views do not survive restart. The API returns `VIEW_NOT_FOUND`; recreate the view explicitly. `/system.instanceId` identifies server restarts. Live collection never automatically starts on boot.
 
@@ -65,7 +88,10 @@ The server owns a monotonic anchored replay clock, independent of request freque
 
 Numeric timestamps are UTC milliseconds. Radio offsets are seconds. Gaps are `{ "unit":"seconds"|"laps", "value":number }` or null, with status, source time and comparison driver IDs. Zero is a real value; null means unavailable. Positions carry `stale`; disconnected/stale live feeds have no current car location. Consumers must freeze/clear live movement when the server stream is lost.
 
-Geometry contains the original session XY lap trace, colored sectors, aligned turns with optional names/sector attribution and a reference lap. Sector colors: S1 `#74bdff`, S2 `#c5a0ff`, S3 `#ffb472`. It is approximate, and may be null. Missing geometry is not permission to invent or borrow another track outline.
+Geometry contains the original session lap trace (`points` are `[UTC ms,x,y,z]` at the full source rate, about 240 ms apart), colored sectors, aligned turns with optional names/sector attribution and a reference lap. Sector colors: S1 `#74bdff`, S2 `#c5a0ff`, S3 `#ffb472`. It is approximate, and may be null. Missing geometry is not permission to invent or borrow another track outline.
+
+- `scale`: `{"metresPerUnit":0.1,"approximate":true}`. Session x/y/z are approximately decimetres: measured on Monza 2024, one lap traces 5,734–5,738 m against the official 5,793 m. This is not GPS. Live geometry carries the same scale because OpenF1 republishes the same F1 `Position.z` feed that the live client reads; the live scale is assumed from that shared source, not separately measured.
+- `pitLane`: `{"points":[[x,y,z],...],"driverNumber":27,"lap":5,"entryTime":<pit record UTC ms>}` or null. It is one actual pit-stop trace from the same session: the contiguous run of that driver's samples that leaves the reference lap by more than 4 m around a pit record (searched from 20 s before the record to 20 s after its lane duration, then followed to where it rejoins), plus the on-track sample on either side so the lane joins the track. A stop is skipped when the run has a sample gap over 1.5 s, a position jump (a frozen source position followed by more than max(25 m, 600 km/h × Δt)), lasts less than half its lane duration or never rejoins; the next pit record is tried. Stationary repeats in the pit box are dropped so the polyline has no zero-length segments; nothing is smoothed, invented or borrowed from another session. Live geometry has `pitLane: null`.
 
 ## WebSocket stream and buffered presentation
 

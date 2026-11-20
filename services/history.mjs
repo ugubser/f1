@@ -1,5 +1,5 @@
 import {upstream, circuitMetadata} from '../providers.mjs';
-import {referenceLap, sectorsFromLap, alignCorners, buildEvents, indexIntervals} from '../domain/replay.mjs';
+import {referenceLap, sectorsFromLap, alignCorners, buildEvents, indexIntervals, pitLaneFromStops} from '../domain/replay.mjs';
 import {ApiError, positiveId} from '../api-errors.mjs';
 
 export class HistoryService {
@@ -78,7 +78,7 @@ export class HistoryService {
       d.events = buildEvents(sourceData).map(event => ({...event, clipId: event.kind === 'radio' && event.url ? Buffer.from(`h:${d.id}:${event.id}`).toString('base64url') : null}));
       if (d.reference) {
         const points = d.reference.points, sectors = sectorsFromLap(points, d.reference.lap);
-        d.geometry = makeGeometry(points, sectors, d.circuit, d.reference.lap); d.geometryRevision++;
+        d.geometry = makeGeometry(points, sectors, d.circuit, d.reference.lap, pitLaneFromStops(points, sourceData.pit || [], d.points)); d.geometryRevision++;
       }
       if (!d.points.size) throw Error('No car position data is available for this race.');
       d.status = 'ready'; d.message = `${session.circuit_short_name} ready · ${d.points.size}/${d.total} cars${d.errors.length ? ' · some positions unavailable' : ''}.`;
@@ -88,11 +88,14 @@ export class HistoryService {
   close() { for (const d of this.datasets.values()) d.cancelled = true; }
 }
 
-export function makeGeometry(points, sectors, circuit, lap) {
+// Session XY(Z) units are about 0.1 m (measured: one Monza lap traces 5,734 m
+// against the official 5,793 m). F1 live Position.z is the same source feed.
+export const SESSION_SCALE = {metresPerUnit: 0.1, approximate: true};
+export function makeGeometry(points, sectors, circuit, lap, pitLane = null) {
   const corners = alignCorners(points, circuit?.corners || []).map(corner => {
     const nearest = points.reduce((a,p) => Math.hypot(p[1]-corner.x,p[2]-corner.y) < Math.hypot(a[1]-corner.x,a[2]-corner.y) ? p : a, points[0]);
     return {...corner, id: String(corner.number) + corner.letter, sector: sectors.find(s => nearest[0] >= s.points[0][0] && nearest[0] <= s.points.at(-1)[0])?.number ?? null};
   });
   return {points, sectors: sectors.map(s => ({...s, color: ['#74bdff','#c5a0ff','#ffb472'][s.number - 1]})), corners, referenceLap: {driverNumber: lap.driver_number, lap: lap.lap_number},
-    coordinateSystem: 'session-xy', approximate: true, source: circuit?.source ?? 'F1 timing', referenceYear: circuit?.referenceYear ?? null, nameSource: circuit?.nameSource ?? null};
+    pitLane, scale: {...SESSION_SCALE}, coordinateSystem: 'session-xy', approximate: true, source: circuit?.source ?? 'F1 timing', referenceYear: circuit?.referenceYear ?? null, nameSource: circuit?.nameSource ?? null};
 }

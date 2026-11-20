@@ -5,7 +5,33 @@ import {HistoryService, makeGeometry} from './history.mjs';
 import {ApiError, invalid, objectBody, positiveId} from '../api-errors.mjs';
 
 const kinds = ['control','pit','radio'];
-const defaults = () => ({selectedDriver: null, selectedTurn: null, notifications: [...kinds], overlays: {sectors: true, turns: true, names: false}});
+export const cameraModes = ['orbit','birdseye','onboard','chase','trackside','director'];
+const defaultCameras = () => [{id: 'cam-1', mode: 'chase', driver: null, position: null, target: null, fov: 55, hud: true}];
+const defaults = () => ({selectedDriver: null, selectedTurn: null, notifications: [...kinds], overlays: {sectors: true, turns: true, names: false}, cameras: defaultCameras()});
+const vector = (value, name) => {
+  if (value === null) return null;
+  objectBody(value, ['x','y','z']);
+  if (['x','y','z'].some(k => typeof value[k] !== 'number' || !Number.isFinite(value[k]) || Math.abs(value[k]) > 1e7)) throw invalid(`Camera ${name} needs finite x, y and z within ±1e7 session units.`);
+  return {x: value.x, y: value.y, z: value.z};
+};
+// Camera windows are view settings (owner decision D4). The array replaces the
+// whole list; omitted optional fields take defaults; unknown fields are rejected.
+export function cameraSettings(list) {
+  if (!Array.isArray(list) || list.length > 4) throw invalid('cameras must be an array of at most 4 cameras.');
+  const ids = new Set();
+  return list.map(c => {
+    objectBody(c, ['id','mode','driver','position','target','fov','hud']);
+    if (typeof c.id !== 'string' || !/^[a-z0-9-]{1,16}$/.test(c.id)) throw invalid('Camera id must be 1-16 lowercase letters, digits or hyphens.');
+    if (ids.has(c.id)) throw invalid('Camera ids must be unique.'); ids.add(c.id);
+    if (!cameraModes.includes(c.mode)) throw invalid('Invalid camera mode.');
+    if (c.driver !== undefined && c.driver !== null && (!Number.isInteger(c.driver) || c.driver < 1 || c.driver > 999)) throw invalid('Camera driver must be an integer 1..999 or null.');
+    if (c.fov !== undefined && (typeof c.fov !== 'number' || !Number.isFinite(c.fov) || c.fov < 15 || c.fov > 110)) throw invalid('Camera fov must be 15..110 degrees.');
+    if (c.hud !== undefined && typeof c.hud !== 'boolean') throw invalid('Camera hud must be a boolean.');
+    const position = c.position === undefined ? null : vector(c.position, 'position'), target = c.target === undefined ? null : vector(c.target, 'target');
+    if (c.mode === 'trackside' && !position) throw invalid('Trackside cameras need a position.');
+    return {id: c.id, mode: c.mode, driver: c.driver ?? null, position, target, fov: c.fov ?? 55, hud: c.hud ?? true};
+  });
+}
 export class ViewService {
   constructor({history = new HistoryService(), live, now = Date.now, clock = () => performance.now(), maxViews = 12, idleMs = 1800000} = {}) {
     this.history = history; this.live = live; this.now = now; this.clock = clock; this.maxViews = maxViews; this.idleMs = idleMs; this.views = new Map();
@@ -32,7 +58,7 @@ export class ViewService {
   }
   pause(v) { v.motionRevision++; if (v.source === 'history') v.time = this.currentTime(v); v.anchor = this.clock(); v.playing = false; }
   patch(id, body) {
-    objectBody(body, ['source','raceId','selectedDriver','selectedTurn','notifications','overlays']); const v = this.get(id);
+    objectBody(body, ['source','raceId','selectedDriver','selectedTurn','notifications','overlays','cameras']); const v = this.get(id);
     if (body.source !== undefined && !['history','live'].includes(body.source)) throw invalid('source must be history or live.');
     const nextSource = body.source ?? v.source;
     if (body.raceId !== undefined) { positiveId(body.raceId); if (!Number.isInteger(body.raceId)) throw invalid('raceId must be an integer.'); if (nextSource !== 'history') throw invalid('raceId requires a historical view.'); }
@@ -40,12 +66,15 @@ export class ViewService {
     if (body.selectedTurn !== undefined && body.selectedTurn !== null && (typeof body.selectedTurn !== 'string' || !/^\d{1,3}[A-Za-z]?$/.test(body.selectedTurn))) throw invalid('Invalid selectedTurn.');
     if (body.notifications !== undefined && (!Array.isArray(body.notifications) || body.notifications.some(k => !kinds.includes(k)) || new Set(body.notifications).size !== body.notifications.length)) throw invalid('Invalid notification categories.');
     if (body.overlays !== undefined) { objectBody(body.overlays, ['sectors','turns','names']); if (Object.values(body.overlays).some(v => typeof v !== 'boolean')) throw invalid('Overlay settings must be booleans.'); }
+    const cameras = body.cameras === undefined ? undefined : cameraSettings(body.cameras);
     if (body.source !== undefined && body.source !== v.source) { this.pause(v); v.source = body.source; v.radio = null; }
     if (body.raceId !== undefined && (+body.raceId !== v.history?.id || ['error','cancelled'].includes(v.history?.status))) {
       this.pause(v); this.history.release(v.history); v.history = this.history.acquire(body.raceId); v.time = null; v.selectedDriver = null; v.selectedTurn = null; v.radio = null;
     }
     for (const key of ['selectedDriver','selectedTurn','notifications']) if (body[key] !== undefined) v[key] = body[key];
     if (body.overlays) Object.assign(v.overlays, body.overlays);
+    // Camera changes are presentation settings: revision only, never a new motion epoch.
+    if (cameras) v.cameras = cameras;
     if (body.selectedDriver !== undefined || body.notifications !== undefined) v.radio = null;
     v.revision++; return v;
   }
@@ -114,7 +143,7 @@ export class ViewService {
       auth: live?.auth ?? null, liveStatus: live ? {session: live.sessionStatus, track: live.trackStatus, updatedAt: live.updatedAt} : null,
       playback: {time, start: v.source === 'history' ? d?.start ?? null : null, end: v.source === 'history' ? d?.end ?? null : null, playing: v.playing, speed: v.speed, supportedSpeeds: [1,5,10,30,60]},
       rendering: {maxGapMs: 5000, staleAfterMs: 2000, liveBufferMs: 300},
-      settings: {selectedDriver: v.selectedDriver, selectedTurn: v.selectedTurn, notifications: v.notifications, overlays: v.overlays}, radio: v.radio,
+      settings: {selectedDriver: v.selectedDriver, selectedTurn: v.selectedTurn, notifications: v.notifications, overlays: {...v.overlays}, cameras: v.cameras}, radio: v.radio,
       progress: {completed: d?.completed ?? 0, total: d?.total ?? 0, missingDrivers: d?.errors ?? []}, cars, lap: live ? live.lapCount.CurrentLap ?? null : cars.reduce((max,c) => Math.max(max,c.lap ?? 0),0), totalLaps: live ? live.lapCount.TotalLaps ?? null : d?.laps.length ? Math.max(...d.laps.map(l => l.lap_number)) : null,
       events: {total: events.length, items: events.slice(eventOffset,eventOffset + eventLimit)}, geometryRevision, ...(geometry ? {geometry: shape} : {}), availability: live ? {turns: {status: 'unavailable', message: 'Turn markers are not supplied by the live feed.'}} : d?.availability ?? {}};
   }

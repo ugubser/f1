@@ -32,6 +32,7 @@ test('real HTTP response bodies conform to the OpenAPI schemas used by native cl
   const v=await request('/views','View',{source:'history',raceId:9590});await ready(server.services.views,v.id);await request('/views/'+v.id,'View');
   const s=await request('/views/'+v.id+'/playback','View',{action:'seek',time:start+100000});await request('/views/'+v.id+'/events','Events');
   await request('/views/'+v.id+'/radio','View',{action:'play',clipId:s.events.items.find(e=>e.kind==='radio').clipId});
+  const cams=await request('/views/'+v.id,'View',{cameras:[{id:'tv-1',mode:'trackside',position:{x:1,y:2,z:3},fov:40},{id:'chase',mode:'chase',driver:2,hud:false}]},'PATCH');assert.equal(cams.settings.cameras[1].fov,55);assert.ok(cams.geometry.pitLane);
   await request('/views/'+v.id,'View',{source:'live'},'PATCH');await request('/f1/auth/login','Auth',{email:'a',password:'fixture-password'});await request('/live/connect','Live',{});await request('/views/'+v.id,'View');await request('/f1/auth/logout','Auth',{});
  }finally{server.shutdown();await new Promise(r=>server.close(r));}
 });

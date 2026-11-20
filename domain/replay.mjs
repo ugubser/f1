@@ -13,13 +13,62 @@ export function positionAt(points, time, maxGap = 5000) {
   const f = (time - a[0]) / (b[0] - a[0]);
   return {x:a[1]+(b[1]-a[1])*f, y:a[2]+(b[2]-a[2])*f, stale:false};
 }
-export function compactLocations(rows, interval = 800) {
+// Full source rate: drop only invalid, (0,0) placeholder and duplicate-timestamp samples.
+export function compactLocations(rows) {
   const points = rows.map(r => [Date.parse(r.date), r.x, r.y, r.z ?? 0])
     .filter(p => p.every(Number.isFinite) && !(p[1] === 0 && p[2] === 0))
     .sort((a,b) => a[0]-b[0]);
-  const out=[];
-  for (let i=0; i<points.length; i++) if (!out.length || points[i][0]-out.at(-1)[0] >= interval || i===points.length-1) out.push(points[i]);
-  return out;
+  return points.filter((p,i) => !i || p[0] !== points[i-1][0]);
+}
+// Planar distance from (x,y) to a closed recorded polyline of [t,x,y,...] points.
+export function distanceToPath(path, x, y) {
+  let best = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const a = path[i], b = path[(i+1) % path.length], dx = b[1]-a[1], dy = b[2]-a[2];
+    const f = Math.max(0, Math.min(1, ((x-a[1])*dx + (y-a[2])*dy) / (dx*dx + dy*dy || 1)));
+    best = Math.min(best, Math.hypot(a[1] + f*dx - x, a[2] + f*dy - y));
+  }
+  return best;
+}
+// Pit-lane geometry is one recorded pit-stop trace of this session: the
+// contiguous run of samples that leaves the reference lap (> threshold units)
+// around a pit record, plus the on-track sample either side so it joins the
+// track. Stops with sample gaps, position jumps (a frozen source position
+// followed by a teleport: > max(jump, maxSpeed x dt), i.e. 25 m and 600 km/h),
+// partial runs or no rejoin are skipped; no path is invented, smoothed or
+// borrowed. Units are session units (~0.1 m); maxSpeed is units per ms.
+export function pitLaneFromStops(reference, pits, pointsByDriver, {threshold = 40, before = 20000, after = 20000, search = 60000, maxGap = 1500, jump = 250, maxSpeed = 1.667, minSpacing = 5} = {}) {
+  if (!(reference?.length > 2)) return null;
+  const stops = pits.map(p => ({driver: p.driver_number, lap: Number.isInteger(p.lap_number) ? p.lap_number : null, entry: Date.parse(p.date), lane: p.lane_duration * 1000}))
+    .filter(s => Number.isInteger(s.driver) && Number.isFinite(s.entry) && Number.isFinite(s.lane) && s.lane > 0).sort((a,b) => a.entry - b.entry || a.driver - b.driver);
+  for (const stop of stops) {
+    const points = pointsByDriver.get(stop.driver) || [], off = new Map();
+    const away = i => { if (!off.has(i)) off.set(i, distanceToPath(reference, points[i][1], points[i][2]) > threshold); return off.get(i); };
+    const lo = stop.entry - before, hi = stop.entry + stop.lane + after;
+    let run = null;
+    for (let i = upperBound(points, lo - 1), start = -1; i <= points.length; i++) {
+      const inside = i < points.length && points[i][0] <= hi && away(i);
+      if (inside && start < 0) start = i;
+      if (!inside && start >= 0) { if (!run || i - start > run[1] - run[0] + 1) run = [start, i - 1]; start = -1; }
+      if (i >= points.length || points[i][0] > hi) break;
+    }
+    if (!run) continue;
+    let [first, last] = run;
+    while (first > 0 && away(first - 1) && points[run[0]][0] - points[first - 1][0] <= search) first--;
+    while (last < points.length - 1 && away(last + 1) && points[last + 1][0] - points[run[1]][0] <= search) last++;
+    if (first === 0 || last === points.length - 1 || away(first - 1) || away(last + 1)) continue;
+    const trace = points.slice(first - 1, last + 2);
+    if (points[last][0] - points[first][0] < stop.lane * .5 || trace.some((p,i) => i && (p[0] - trace[i-1][0] > maxGap || Math.hypot(p[1]-trace[i-1][1], p[2]-trace[i-1][2]) > Math.max(jump, maxSpeed * (p[0] - trace[i-1][0]))))) continue;
+    const out = [];
+    for (const [i,p] of trace.entries()) {
+      const prev = out.at(-1);
+      // Drop stationary repeats (the pit box) so the polyline has no zero-length segments.
+      if (prev && i < trace.length - 1 && Math.hypot(p[1]-prev[0], p[2]-prev[1], (p[3] ?? 0)-prev[2]) < minSpacing) continue;
+      out.push([p[1], p[2], p[3] ?? 0]);
+    }
+    return {points: out, driverNumber: stop.driver, lap: stop.lap, entryTime: stop.entry};
+  }
+  return null;
 }
 export function referenceLap(points, laps) {
   const candidates = laps.filter(l => !l.is_pit_out_lap && l.lap_number > 1 && l.lap_duration > 30 && l.date_start)

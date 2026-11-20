@@ -10,6 +10,9 @@ const seconds=Number(process.env.F1_BENCHMARK_SECONDS||6),token=randomBytes(32).
 if(!Number.isFinite(seconds)||seconds<2||seconds>30)throw Error('Benchmark duration must be 2..30 seconds per speed.');
 const server=createReplayServer({apiToken:token});await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const base='http://127.0.0.1:'+server.address().port+'/api/v1';
+// Observe the server's own flow-control input (bufferedAmount right after each send).
+let serverMaxBuffered=0,serverCloses=[];const streams=server.services.streams,connection=streams.connection.bind(streams);
+streams.connection=ws=>{const send=ws.send.bind(ws),close=ws.close.bind(ws);ws.send=(data,cb)=>{send(data,cb);serverMaxBuffered=Math.max(serverMaxBuffered,ws.bufferedAmount);};ws.close=(code,reason)=>{serverCloses.push(code);close(code,reason);};connection(ws);};
 async function api(path,body){const r=await fetch(base+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();if(!r.ok)throw Error(data.error?.message||'Benchmark request failed');return data;}
 const results=[];
 try{
@@ -20,13 +23,13 @@ try{
   await api('/views/'+view.id+'/playback',{action:'seek',time:ready.playback.start+(ready.playback.end-ready.playback.start)*.4});
   await api('/views/'+view.id+'/playback',{action:'speed',speed});
   const buffer=new MotionBuffer(),ticket=await api('/views/'+view.id+'/stream-ticket',{}),ws=new WebSocket(base.replace('/api/v1','').replace('http:','ws:')+ticket.url);
-  let current=null,messages=0,bytes=0,chunks=0,error=null,minRtt=Infinity,finished=false;
+  let current=null,messages=0,bytes=0,chunks=0,error=null,minRtt=Infinity,finished=false,largest=0;serverMaxBuffered=0;serverCloses=[];
   const ping=()=>ws.send(JSON.stringify({type:'ping',sentAt:performance.now()}));
   ws.on('error',e=>{error=e;});ws.on('close',()=>{if(!finished)error=new Error('Benchmark stream closed unexpectedly.');});
   ws.on('open',()=>{ws.send(JSON.stringify({type:'auth',ticket:ticket.ticket}));ping();});
   ws.on('message',raw=>{
    try{
-    const m=JSON.parse(raw);messages++;bytes+=Buffer.byteLength(raw);
+    const m=JSON.parse(raw);messages++;bytes+=Buffer.byteLength(raw);largest=Math.max(largest,Buffer.byteLength(raw));
     if(m.type==='pong'){const now=performance.now(),rtt=now-m.sentAt;if(rtt<minRtt){minRtt=rtt;buffer.setOffset(m.serverTime-(m.sentAt+now)/2);}return;}
     if(m.type==='snapshot'||m.type==='state'){current=mergeState(current,m);buffer.state(current);}
     else if(m.type==='coordinates'){buffer.coordinates(m);chunks++;}
@@ -43,8 +46,8 @@ try{
   }
   const elapsed=performance.now()-t0,last=buffer.time().time;
   finished=true;ws.terminate();await api('/views/'+view.id+'/playback',{action:'pause'});
-  const result={speed,elapsedSeconds:+(elapsed/1000).toFixed(2),replaySeconds:+((last-first)/1000).toFixed(2),renderFrames:frames,distinctPositionFrames:changed,bufferUnderruns:underruns,coordinateChunks:chunks,networkMessages:messages,networkKB:+(bytes/1024).toFixed(1),controlMs:+commandMs.toFixed(1)};results.push(result);console.log(JSON.stringify(result));
-  if(underruns||changed<frames*.95||Math.abs((last-first)/elapsed-speed)>.1)throw Error(`Playback benchmark failed at ${speed}x.`);
+  const result={speed,elapsedSeconds:+(elapsed/1000).toFixed(2),replaySeconds:+((last-first)/1000).toFixed(2),renderFrames:frames,distinctPositionFrames:changed,bufferUnderruns:underruns,coordinateChunks:chunks,networkMessages:messages,networkKB:+(bytes/1024).toFixed(1),largestMessageKB:+(largest/1024).toFixed(1),serverMaxBufferedKB:+(serverMaxBuffered/1024).toFixed(1),slowConsumerCloses:serverCloses.filter(c=>c===1013).length,controlMs:+commandMs.toFixed(1)};results.push(result);console.log(JSON.stringify(result));
+  if(result.slowConsumerCloses||underruns||changed<frames*.95||Math.abs((last-first)/elapsed-speed)>.1)throw Error(`Playback benchmark failed at ${speed}x.`);
  }
  if(process.env.F1_BENCHMARK_OUTPUT)await writeFile(process.env.F1_BENCHMARK_OUTPUT,JSON.stringify({session:9590,results},null,2));
 }finally{server.shutdown();await new Promise(r=>server.close(r));}

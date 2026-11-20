@@ -63,3 +63,27 @@ test('live frames normalize radio IDs, gaps and stale locations without browser 
  const f=fakeLive(),time=Date.now();f.live.snapshot=async()=>({auth:{signedIn:true},connection:{state:'stale',message:'Source stale'},session:{key:55,circuit:'Fixture',name:'Race'},updatedAt:time-40000,sessionStatus:'Started',trackStatus:null,reference:null,lapCount:{CurrentLap:4,TotalLaps:50},events:[{id:'radio-1',time:time-1000,kind:'radio',drivers:[2],message:'Team radio clip',clipAvailable:true}],cars:[{driver_number:2,full_name:'Fixture Driver',name_acronym:'FDR',team_name:'Fixture',team_colour:'aabbcc',position:1,positionSince:time-40000,lap:4,tire:{compound:'HARD',age:3,stint:1},points:[[time-1000,10,20]],timing:{}}]});
  const views=new ViewService({live:f.live,now:()=>time}),v=views.create({source:'live'});try{const s=await views.snapshot(v.id);assert.equal(s.cars[0].location,null);assert.equal(s.cars[0].timing.status,'inactive');assert.equal(s.lap,4);assert.ok(s.events.items[0].clipId);assert.equal('clipAvailable' in s.events.items[0],false);assert.equal(s.geometry,null);}finally{views.close();}
 });
+test('camera windows are server-owned view settings: defaults, whole-list replacement, revision without a new motion epoch',async()=>{
+ const {views}=setup(),v=views.create({source:'history',raceId:9590}),other=views.create({source:'history',raceId:9590});try{
+  const s=await ready(views,v.id);assert.deepEqual(s.settings.cameras,[{id:'cam-1',mode:'chase',driver:null,position:null,target:null,fov:55,hud:true}]);
+  views.playback(v.id,{action:'play'});const before=await views.snapshot(v.id);
+  views.patch(v.id,{cameras:[{id:'tv',mode:'trackside',position:{x:1,y:-2,z:3.5},target:{x:0,y:0,z:0},fov:30,hud:false},{id:'on-81',mode:'onboard',driver:81},{id:'map-top',mode:'birdseye'},{id:'orbit',mode:'orbit',position:null}]});
+  const after=await views.snapshot(v.id);assert.equal(after.motionEpoch,before.motionEpoch);assert.ok(after.revision>before.revision);assert.equal(after.playback.playing,true);
+  assert.deepEqual(after.settings.cameras[0],{id:'tv',mode:'trackside',driver:null,position:{x:1,y:-2,z:3.5},target:{x:0,y:0,z:0},fov:30,hud:false});
+  assert.deepEqual(after.settings.cameras[1],{id:'on-81',mode:'onboard',driver:81,position:null,target:null,fov:55,hud:true});assert.equal(after.settings.cameras.length,4);
+  assert.equal((await views.snapshot(other.id)).settings.cameras.length,1);
+  views.patch(v.id,{cameras:[]});assert.deepEqual((await views.snapshot(v.id)).settings.cameras,[]);
+  views.patch(v.id,{selectedDriver:2});assert.deepEqual((await views.snapshot(v.id)).settings.cameras,[]);
+ }finally{views.close();}
+});
+test('invalid camera lists are rejected atomically with explicit errors',async()=>{
+ const {views}=setup(),v=views.create({source:'history',raceId:9590});try{
+  const cam={id:'cam-1',mode:'chase'},bad=[
+   [[cam,cam,cam,cam,cam].map((c,i)=>({...c,id:'c'+i})),/at most 4/],[{cameras:1},/array/],[[{...cam,id:'Cam'}],/lowercase/],[[{...cam,id:'x'.repeat(17)}],/lowercase/],[[cam,{...cam}],/unique/],
+   [[{id:'a'}],/mode/],[[{mode:'chase'}],/id/],[[{...cam,mode:'drone'}],/mode/],[[{...cam,driver:0}],/driver/],[[{...cam,driver:1.5}],/driver/],[[{...cam,fov:10}],/fov/],[[{...cam,fov:'55'}],/fov/],
+   [[{...cam,hud:1}],/hud/],[[{...cam,zoom:2}],/Unknown/],[[{id:'t',mode:'trackside'}],/position/],[[{...cam,position:{x:1,y:2}}],/finite/],[[{...cam,target:{x:1,y:2,z:2e7}}],/finite/],
+   [[{...cam,position:{x:1,y:2,z:3,w:4}}],/Unknown/],[[{...cam,position:[1,2,3]}],/object/],[[null],/object/]];
+  for(const [cameras,message] of bad)assert.throws(()=>views.patch(v.id,{selectedDriver:2,cameras:cameras.cameras??cameras}),message);
+  assert.equal(v.selectedDriver,null);assert.equal(v.cameras.length,1);assert.equal(v.revision,1);
+ }finally{views.close();}
+});

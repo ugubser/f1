@@ -1,50 +1,85 @@
 {
   "session": 9590,
+  "samples": "full source rate (location-v2 cache; median 240 ms)",
   "results": [
     {
       "speed": 1,
       "elapsedSeconds": 6.01,
       "replaySeconds": 6.01,
-      "renderFrames": 347,
-      "distinctPositionFrames": 347,
+      "renderFrames": 373,
+      "distinctPositionFrames": 373,
       "bufferUnderruns": 0,
       "coordinateChunks": 5,
       "networkMessages": 30,
-      "networkKB": 81.2,
-      "controlMs": 3.2
+      "networkKB": 134.2,
+      "largestMessageKB": 45,
+      "serverMaxBufferedKB": 0,
+      "slowConsumerCloses": 0,
+      "controlMs": 2.4
     },
     {
       "speed": 10,
       "elapsedSeconds": 6.01,
       "replaySeconds": 60.05,
-      "renderFrames": 350,
-      "distinctPositionFrames": 350,
+      "renderFrames": 373,
+      "distinctPositionFrames": 373,
       "bufferUnderruns": 0,
       "coordinateChunks": 7,
-      "networkMessages": 59,
-      "networkKB": 180.8,
-      "controlMs": 3.9
+      "networkMessages": 54,
+      "networkKB": 357.3,
+      "largestMessageKB": 75.6,
+      "serverMaxBufferedKB": 0,
+      "slowConsumerCloses": 0,
+      "controlMs": 2.4
     },
     {
       "speed": 60,
       "elapsedSeconds": 6.01,
-      "replaySeconds": 360.89,
-      "renderFrames": 348,
-      "distinctPositionFrames": 348,
+      "replaySeconds": 360.82,
+      "renderFrames": 374,
+      "distinctPositionFrames": 374,
       "bufferUnderruns": 0,
       "coordinateChunks": 7,
-      "networkMessages": 61,
-      "networkKB": 641.3,
-      "controlMs": 3.4
+      "networkMessages": 55,
+      "networkKB": 1458.2,
+      "largestMessageKB": 382.7,
+      "serverMaxBufferedKB": 0,
+      "slowConsumerCloses": 0,
+      "controlMs": 2.1
     }
   ],
-  "date": "2026-11-10",
+  "date": "2026-11-20",
   "environment": {
-    "platform": "macOS",
-    "node": "26.8.1",
+    "platform": "Linux",
+    "node": "24.16.0",
     "data": "actual cached OpenF1 Monza 2024",
     "transport": "local REST controls + WebSocket JSON buffering",
     "scope": "one isolated benchmark view; no F1 live connection"
+  },
+  "previous": {
+    "date": "2026-11-10",
+    "samples": "thinned to 800 ms (location v1 cache)",
+    "platform": "macOS",
+    "results": [
+      {
+        "speed": 1,
+        "networkKB": 81.2,
+        "coordinateChunks": 5,
+        "bufferUnderruns": 0
+      },
+      {
+        "speed": 10,
+        "networkKB": 180.8,
+        "coordinateChunks": 7,
+        "bufferUnderruns": 0
+      },
+      {
+        "speed": 60,
+        "networkKB": 641.3,
+        "coordinateChunks": 7,
+        "bufferUnderruns": 0
+      }
+    ]
   },
   "browser": [
     {
@@ -68,5 +103,6 @@
       "drawFrames": 1875,
       "distinctTimeFrames": 1875
     }
-  ]
+  ],
+  "browserMeasured": "2026-11-10, macOS, 800 ms thinned samples; not re-run for full-rate data"
 }

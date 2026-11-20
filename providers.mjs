@@ -11,12 +11,15 @@ await mkdir(CACHE,{recursive:true});
 let tail=Promise.resolve();
 const inflight=new Map();
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
+// Bump an endpoint's tag when its compacted cache format changes so older files
+// are never reused. location-v2: full source rate (v1 files were thinned to 800 ms).
+const CACHE_VERSION={location:'location-v2'};
 // One outgoing request at a time, below the free API's per-second limit.
 export function upstream(endpoint,params) {
   const query=new URLSearchParams(params).toString(), key=endpoint+'?'+query;
   if(inflight.has(key)) return inflight.get(key);
   const job=(async()=>{
-    const filename=path.join(CACHE,createHash('sha256').update(key).digest('hex')+'.json.gz');
+    const filename=path.join(CACHE,createHash('sha256').update((CACHE_VERSION[endpoint]?CACHE_VERSION[endpoint]+'|':'')+key).digest('hex')+'.json.gz');
     try {
       const info=await stat(filename);
       if(endpoint!=='sessions' || Date.now()-info.mtimeMs<3600000) return JSON.parse(gunzipSync(await readFile(filename)));

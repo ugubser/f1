@@ -61,6 +61,10 @@ test('the complete historical workflow works through API calls without the web U
   s=await(await request('/views/'+v.id,{method:'PATCH',body:{selectedDriver:2,selectedTurn:'1',notifications:['control'],overlays:{names:true}}})).json();assert.equal(s.settings.selectedDriver,2);assert.equal(s.settings.selectedTurn,'1');assert.equal(s.events.total,2);
   const events=await(await request('/views/'+v.id+'/events?offset=1&limit=1')).json();assert.equal(events.total,2);assert.equal(events.items.length,1);
   assert.equal((await request('/views/'+v.id+'/events?limit=1000')).status,400);
+  const cameras=[1,2,3,4].map(i=>({id:'cam-'+i,mode:['orbit','onboard','trackside','director'][i-1],driver:i===2?81:null,position:i===3?{x:-1234.5,y:5678,z:12}:null,target:null,fov:20+i*10,hud:i%2===0}));
+  r=await request('/views/'+v.id,{method:'PATCH',body:{cameras}});assert.equal(r.status,200);s=await r.json();assert.deepEqual(s.settings.cameras,cameras);assert.deepEqual((await(await request('/views/'+v.id)).json()).settings.cameras,cameras);
+  for(const bad of [{cameras:[{id:'x',mode:'trackside'}]},{cameras:[{id:'x',mode:'chase',extra:true}]},{cameras:'none'}]){r=await request('/views/'+v.id,{method:'PATCH',body:bad});assert.equal(r.status,400);assert.equal((await r.json()).error.code,'INVALID_REQUEST');}
+  assert.deepEqual((await(await request('/views/'+v.id)).json()).settings.cameras,cameras);
   assert.equal((await request('/views/'+v.id,{method:'DELETE'})).status,204);assert.equal((await request('/views/'+v.id)).status,404);
  });
 });
