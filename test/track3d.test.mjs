@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {createMapper,referenceZMin,smoothPath,ribbon,kerbs,startLine,buildTrack,tangents,leftNormal,pitPoints,wrapAngle,angleDelta,dampAngle,damp,headingVector,sessionHeading,nearestIndex,nearestIndexAround,heightAt} from '../public/track3d.js';
+import {embankment,clearanceFor,sectorIndices,offTrackRuns,createMapper,referenceZMin,smoothPath,ribbon,kerbs,startLine,buildTrack,tangents,leftNormal,pitPoints,wrapAngle,angleDelta,dampAngle,damp,headingVector,sessionHeading,nearestIndex,nearestIndexAround,heightAt} from '../public/track3d.js';
 
 const circle=(r,n,{y=k=>0,phase=0}={})=>Array.from({length:n},(_,k)=>{const a=phase+k/n*2*Math.PI;return [r*Math.cos(a),y(k),r*Math.sin(a)];});
 function segmentsIntersect(a,b,c,d){const o=(p,q,r)=>(q[0]-p[0])*(r[2]-p[2])-(q[2]-p[2])*(r[0]-p[0]);const d1=o(c,d,a),d2=o(c,d,b),d3=o(a,b,c),d4=o(a,b,d);return d1*d2<0&&d3*d4<0;}
@@ -73,4 +73,47 @@ test('camera grid: target resolution (driver → selected → P1) and auto layou
  assert.equal(resolveTarget({driver:44},state),44);assert.equal(resolveTarget({driver:null},state),16);assert.equal(resolveTarget({driver:null},{...state,settings:{selectedDriver:4}}),4);assert.equal(resolveTarget({driver:null},{settings:{selectedDriver:null},cars:[]}),null);
  assert.deepEqual([0,1,2,3,4,7].map(n=>layoutFor(n,null)),['0','1','2','3','4','4']);assert.equal(layoutFor(2,'cam-1'),'max');
  assert.deepEqual(DEFAULT_CAMERA,{id:'cam-1',mode:'chase',driver:null,position:null,target:null,fov:55,hud:true});assert.equal(MAX_CAMERAS,4);
+});
+
+const upward=g=>{const P=i=>[g.positions[i*3],g.positions[i*3+1],g.positions[i*3+2]];for(let k=0;k<g.indices.length;k+=3){const [a,b,c]=[0,1,2].map(j=>P(g.indices[k+j]));if((b[2]-a[2])*(c[0]-a[0])-(b[0]-a[0])*(c[2]-a[2])<-1e-9)return false;}return true;};
+test('embankments slope from the ribbon edge outward to the ground, wider where the track is higher, faces up',()=>{
+ const center=smoothPath(circle(200,40,{y:k=>k<20?10:0}),{spacing:2}),road=ribbon(center,12);
+ for(const [edge,side] of [[road.left,1],[road.right,-1]]){
+  const e=embankment(edge,road.tangents,side,0,{slope:2,verge:1,drop:0.1});
+  assert.equal(e.positions.length,edge.length*9);assert.ok(upward(e),'every triangle faces up');
+  for(let i=0;i<edge.length;i++){const top=[e.positions[i*9],e.positions[i*9+1],e.positions[i*9+2]],foot=[e.positions[i*9+6],e.positions[i*9+7],e.positions[i*9+8]];
+   assert.deepEqual(top,edge[i].map(v=>Math.fround(v)));assert.equal(foot[1],0,'foot on the ground');
+   const out=Math.hypot(foot[0]-top[0],foot[2]-top[2]);assert.ok(Math.abs(out-Math.max(1.3,1+Math.max(0,edge[i][1]-0.1)*2))<1e-3,'width = verge + height·slope (min verge + 0.3)');
+   // outward: the foot is farther from the centerline than the edge
+   const c=center[i];assert.ok(Math.hypot(foot[0]-c[0],foot[2]-c[2])>Math.hypot(top[0]-c[0],top[2]-c[2]));}
+ }
+});
+test('embankment clearance stops a slope short of a parallel lane and of a far part of its own loop',()=>{
+ const main=Array.from({length:101},(_,i)=>[i*2,0,0]),lane=Array.from({length:101},(_,i)=>[i*2,0,-20]);
+ const paths=[{points:main,halfWidth:6,closed:false},{points:lane,halfWidth:4,closed:false}],clear=clearanceFor(paths,paths[0]);
+ // From the main left edge (z = −6) outward (−Z) the lane centre is 14 m away: stop 1 m before its 4 m half width.
+ assert.ok(Math.abs(clear(50,[100,0,-6],0,-1,40)-9)<1e-9);assert.equal(clear(50,[100,0,6],0,1,40),Infinity,'nothing on the other side');
+ const road=ribbon(main,12,{closed:false}),e=embankment(road.left,road.tangents,1,-10,{closed:false,clearance:clear,slope:2,verge:1,drop:0});
+ const foot=e.positions[50*9+8];assert.ok(Math.abs(foot-(-6-9))<1e-3,'slope ends before the lane, not 21 m out');
+});
+test('sector indices map supplied sector start points onto the smoothed centerline in lap order',()=>{
+ const raw=Array.from({length:60},(_,k)=>{const a=k/60*2*Math.PI;return [k,3000*Math.cos(a),3000*Math.sin(a),1800];});
+ const sectors=[{number:1,points:[raw[0]]},{number:2,points:[[20,raw[20][1],raw[20][2]]]},{number:3,points:[[40,raw[40][1],raw[40][2]]]}];
+ const track=buildTrack({points:raw,corners:[],sectors});assert.ok(track.sectors);assert.equal(track.sectors.length,track.center.length);
+ assert.equal(track.sectors[0],1);assert.equal(track.sectors.at(-1),3);
+ const third=track.center.length/3,first2=track.sectors.indexOf(2),first3=track.sectors.indexOf(3);assert.ok(Math.abs(first2-third)<3&&Math.abs(first3-2*third)<3);
+ for(let i=1;i<track.sectors.length;i++)assert.ok(track.sectors[i]>=track.sectors[i-1],'monotonic');
+ // Boundaries out of lap order or far from the circuit give no tint rather than a wrong one.
+ assert.equal(sectorIndices(track.center,[sectors[0],sectors[2],{...sectors[1],number:3}],track.mapper),null);
+ assert.equal(sectorIndices(track.center,[sectors[0],{number:2,points:[[1,99999,99999]]}],track.mapper),null);
+ assert.equal(sectorIndices(track.center,[],track.mapper),null);assert.equal(buildTrack({points:raw,corners:[]}).sectors,null);
+});
+test('pit lane edge runs exclude the stretches that lie on the main ribbon; buildTrack adds embankments',()=>{
+ const center=Array.from({length:200},(_,i)=>[i*2,0,0]);
+ const pit=Array.from({length:50},(_,i)=>[100+i*2,0,i<10||i>=40?0:-15]);
+ assert.deepEqual(offTrackRuns(pit,center,10),[[10,39]]);
+ const points=Array.from({length:60},(_,k)=>{const a=k/60*2*Math.PI;return [k,3000*Math.cos(a),2000*Math.sin(a),1850+100*Math.sin(a)];});
+ const track=buildTrack({points,corners:[],pitLane:{points:[[3000,-400,1850],[2850,-300,1850],[2850,0,1850],[2850,300,1850],[3000,400,1850]]}});
+ assert.equal(track.embankments.length,2);assert.equal(track.pit.embankments.length,2);assert.ok(track.pit.edgeRuns.length>=1);
+ for(const e of [...track.embankments,...track.pit.embankments])assert.ok(upward(e));
 });

@@ -131,6 +131,73 @@ export function skirt(edge, groundY, {closed = true} = {}) {
   return {positions, indices};
 }
 
+// Sloped grass embankment from a ribbon edge down to the ground plane, so raised sections read as built up on the
+// ground rather than floating. side +1 = outward along the left normal (left edge), −1 = right edge.
+// Rows per edge point: edge (track height), shoulder (verge, slightly lower), foot (ground). `colors` shade the slope
+// from verge to ground. Every triangle faces up (counter-clockwise from +Y).
+export function embankment(edge, edgeTangents, side, groundY, {closed = true, clearance = null, slope = 2.4, verge = 1.2, drop = 0.12, vergeColor = [0.036, 0.052, 0.03], footColor = [0.021, 0.034, 0.024]} = {}) {
+  const n = edge.length, positions = new Float32Array(n * 9), colors = new Float32Array(n * 9);
+  for (let i = 0; i < n; i++) {
+    const [lx, lz] = leftNormal(edgeTangents[i]), nx = lx * side, nz = lz * side, e = edge[i], h = Math.max(0, e[1] - drop - groundY);
+    const out = Math.max(verge + 0.3, Math.min(verge + h * slope, clearance ? clearance(i, e, nx, nz, verge + h * slope) : Infinity));
+    positions.set([e[0], e[1], e[2], e[0] + nx * verge, e[1] - drop, e[2] + nz * verge, e[0] + nx * out, groundY, e[2] + nz * out], i * 9);
+    colors.set([...vergeColor, ...vergeColor, ...footColor], i * 9);
+  }
+  const quads = closed ? n : n - 1, indices = new Uint32Array(quads * 12), P = k => [positions[k * 3], positions[k * 3 + 1], positions[k * 3 + 2]];
+  const tri = (out, a, b, c) => {
+    const A = P(a), B = P(b), C = P(c), ny = (B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]);
+    out.push(...(ny >= 0 ? [a, b, c] : [a, c, b]));
+  };
+  const list = [];
+  for (let i = 0; i < quads; i++) {
+    const a = i * 3, b = ((i + 1) % n) * 3;
+    for (let r = 0; r < 2; r++) { tri(list, a + r, b + r, a + r + 1); tri(list, b + r, b + r + 1, a + r + 1); }
+  }
+  indices.set(list);
+  return {positions, colors, indices};
+}
+
+// Embankments must not bury another part of the circuit (a bridge/underpass, a parallel pit lane). paths:
+// [{points, halfWidth, closed}]. Returns clearance(i, edgePoint, nx, nz, maxOut) -> the outward distance at which the
+// slope of `own` must stop: just short of the edge of any other path (or a far part of its own path) ahead along the
+// outward normal.
+export function clearanceFor(paths, own, {cell = 24, skip = 40} = {}) {
+  const grid = new Map(), key = (x, z) => `${Math.floor(x / cell)},${Math.floor(z / cell)}`, maxHalf = Math.max(...paths.map(p => p.halfWidth));
+  for (const path of paths) for (const [j, q] of path.points.entries()) {
+    const k = key(q[0], q[2]); if (!grid.has(k)) grid.set(k, []); grid.get(k).push([path, j, q]);
+  }
+  const n = own.points.length;
+  return (i, e, nx, nz, maxOut) => {
+    let limit = Infinity;
+    const reach = maxOut + maxHalf + 2, c0 = Math.floor((e[0] - reach) / cell), c1 = Math.floor((e[0] + reach) / cell), r0 = Math.floor((e[2] - reach) / cell), r1 = Math.floor((e[2] + reach) / cell);
+    for (let cx = c0; cx <= c1; cx++) for (let cz = r0; cz <= r1; cz++) for (const [path, j, q] of grid.get(`${cx},${cz}`) || []) {
+      if (path === own) { const d = Math.abs(i - j); if ((own.closed ? Math.min(d, n - d) : d) < skip) continue; }
+      const dx = q[0] - e[0], dz = q[2] - e[2], along = dx * nx + dz * nz, across = Math.abs(dx * nz - dz * nx);
+      if (along > 0 && across < path.halfWidth + 2) limit = Math.min(limit, along - path.halfWidth - 1);
+    }
+    return limit;
+  };
+}
+
+// Sector number (1-based) for every centerline index. Sector boundaries are the supplied sector start points
+// (geometry.sectors[k].points[0] = [t,x,y,...], recorded at the sector times) mapped to their nearest centerline point;
+// the reference lap starts sector 1 at center[0]. Returns null when there are no sectors or the boundaries are not in
+// lap order, so callers draw no tint instead of a wrong one.
+export function sectorIndices(center, sectors, mapper) {
+  if (!Array.isArray(sectors) || sectors.length < 2 || center.length < 3) return null;
+  const ordered = [...sectors].sort((a, b) => a.number - b.number), bounds = [0];
+  for (const s of ordered.slice(1)) {
+    const p = s.points?.[0];
+    if (!Array.isArray(p) || !Number.isFinite(p[1]) || !Number.isFinite(p[2])) return null;
+    const [X, , Z] = mapper.toWorld(p[1], p[2], undefined), {index, distance} = nearestIndex(center, X, Z);
+    if (distance > 40 || index <= bounds.at(-1)) return null;
+    bounds.push(index);
+  }
+  const out = new Uint8Array(center.length);
+  for (let k = 0; k < bounds.length; k++) out.fill(ordered[k].number, bounds[k], bounds[k + 1] ?? center.length);
+  return out;
+}
+
 export function nearestIndex(center, X, Z) {
   let best = -1, bestDistance = Infinity;
   for (let i = 0; i < center.length; i++) {
@@ -158,7 +225,7 @@ export function kerbs(center, cornerPoints, {width = TRACK_WIDTH, kerbWidth = 1.
   const t = tangents(center, closed), n = center.length, positions = [], colors = [], indices = [], placed = [];
   if (n < 3) return {positions: new Float32Array(0), colors: new Float32Array(0), indices: new Uint32Array(0), placed};
   const spacing = Math.max(0.1, dist(center[0], center[1])), m = Math.max(1, Math.round(halfLength / spacing));
-  const inner = width / 2 - 0.3, outer = inner + kerbWidth, red = [0.78, 0.07, 0.12], white = [0.9, 0.91, 0.9];
+  const inner = width / 2 - 0.3, outer = inner + kerbWidth, red = [0.56, 0.018, 0.024], white = [0.8, 0.81, 0.8];
   for (const corner of cornerPoints) {
     const {index, distance} = nearestIndex(center, corner[0], corner[2]);
     if (index < 0 || distance > maxDistance) continue;
@@ -180,13 +247,13 @@ export function kerbs(center, cornerPoints, {width = TRACK_WIDTH, kerbWidth = 1.
 }
 
 // Chequered start/finish line across the ribbon at center[0] (geometry.points[0], the reference lap start).
-export function startLine(center, {width = TRACK_WIDTH, rows = 2, columns = 12, cell = 0.6, lift = 0.035} = {}) {
+export function startLine(center, {width = TRACK_WIDTH, rows = 3, columns = 12, cell = 0.75, lift = 0.035} = {}) {
   const positions = [], colors = [], indices = [];
   if (center.length < 2) return {positions: new Float32Array(0), colors: new Float32Array(0), indices: new Uint32Array(0)};
   const [tx, tz] = tangents(center, true)[0], [lx, lz] = leftNormal([tx, tz]), c = center[0], y = c[1] + lift;
   for (let r = 0; r < rows; r++) for (let q = 0; q < columns; q++) {
     const a0 = (r - rows / 2) * cell, a1 = a0 + cell, l0 = width / 2 - q * width / columns, l1 = l0 - width / columns, base = positions.length / 3;
-    const color = (r + q) & 1 ? [0.08, 0.09, 0.1] : [0.93, 0.94, 0.92];
+    const color = (r + q) & 1 ? [0.012, 0.013, 0.015] : [0.86, 0.87, 0.85];
     for (const [a, l] of [[a0, l0], [a0, l1], [a1, l0], [a1, l1]]) { positions.push(c[0] + tx * a + lx * l, y, c[2] + tz * a + lz * l); colors.push(...color); }
     indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
   }
@@ -215,12 +282,35 @@ export function buildTrack(geometry, {width = TRACK_WIDTH, pitWidth = PIT_WIDTH,
       return w;
     });
     const path = smoothPath(pitControl, {closed: false, spacing});
-    if (path.length >= 2) pit = {center: path, ribbon: ribbon(path, pitWidth, {closed: false, lift: -0.02})};
+    if (path.length >= 2) pit = {center: path, ribbon: ribbon(path, pitWidth, {closed: false, lift: -0.02}), edgeRuns: offTrackRuns(path, center, width / 2 + pitWidth / 2)};
   }
   let length = 0;
   for (let i = 0; i < center.length; i++) length += dist(center[i], center[(i + 1) % center.length]);
-  return {mapper, zMin: mapper.zMin, width, center, ribbon: road, skirts: [skirt(road.left, groundY), skirt(road.right, groundY)],
+  const main = {points: center, halfWidth: width / 2, closed: true}, lane = pit && {points: pit.center, halfWidth: pitWidth / 2, closed: false};
+  const paths = lane ? [main, lane] : [main], mainClear = clearanceFor(paths, main);
+  const embankments = [embankment(road.left, road.tangents, 1, groundY, {clearance: mainClear}), embankment(road.right, road.tangents, -1, groundY, {clearance: mainClear})];
+  if (pit) {
+    // The pit lane meets the track at both ends: its slopes stop short of the track there.
+    const pitClear = clearanceFor(paths, lane);
+    pit.embankments = [embankment(pit.ribbon.left, pit.ribbon.tangents, 1, groundY, {closed: false, clearance: pitClear}), embankment(pit.ribbon.right, pit.ribbon.tangents, -1, groundY, {closed: false, clearance: pitClear})];
+  }
+  return {mapper, zMin: mapper.zMin, width, center, ribbon: road, embankments,
+    sectors: sectorIndices(center, geometry.sectors, mapper),
     kerbs: kerbs(center, corners, {width}), start: startLine(center, {width}), pit, bounds: box, groundY, length};
+}
+
+// Index ranges [from, to] of a path that lie off the main ribbon (centre farther than `clear` from the main
+// centerline). The pit trace starts and ends on the racing line; its edge lines are drawn only on these runs.
+export function offTrackRuns(path, center, clear) {
+  const runs = [];
+  let from = -1, hint;
+  for (let i = 0; i <= path.length; i++) {
+    let off = false;
+    if (i < path.length) { const near = nearestIndexAround(center, path[i][0], path[i][2], hint); hint = near.index; off = near.distance > clear; }
+    if (off && from < 0) from = i;
+    if (!off && from >= 0) { if (i - 1 > from) runs.push([from, i - 1]); from = -1; }
+  }
+  return runs;
 }
 
 // Track surface height near a world XZ point (used only when a sample carries no z).
