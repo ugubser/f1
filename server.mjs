@@ -16,6 +16,9 @@ import {openapi} from './openapi.mjs';
 import {readUIConfig} from './ui-config.mjs';
 
 const ROOT = fileURLToPath(new URL('.',import.meta.url));
+// Public static UI files. Add new browser modules here explicitly; nothing else under public/ is served.
+export const publicFiles = {'/':'index.html','/app.js':'app.js','/api-client.js':'api-client.js','/connection.js':'connection.js','/motion-buffer.js':'motion-buffer.js','/style.css':'style.css',
+  '/track3d.js':'track3d.js','/scene3d.js':'scene3d.js','/cameras3d.js':'cameras3d.js','/camera-grid.js':'camera-grid.js','/hud3d.js':'hud3d.js'};
 function json(req,res,data,status=200) {
   let body = Buffer.from(JSON.stringify(data));
   const headers = {'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'};
@@ -115,8 +118,10 @@ export function createReplayServer({apiToken, uiConfig = null, allowedOrigins = 
         if(!uiConfig)throw new ApiError(503,'UI_NOT_CONFIGURED','Configure public/.env and restart the server.');
         return json(req,res,{apiToken:uiConfig.apiToken});
       }
-      const allowed={'/':'index.html','/app.js':'app.js','/api-client.js':'api-client.js','/connection.js':'connection.js','/motion-buffer.js':'motion-buffer.js','/style.css':'style.css'};
-      const file=allowed[url.pathname];if(!file)throw new ApiError(404,'NOT_FOUND','Not found.');
+      // Only the pinned three.js module build is exposed from node_modules; nothing else there is served.
+      const vendor={'/vendor/three.module.js':'three.module.js','/vendor/three.core.js':'three.core.js'}[url.pathname];
+      if(vendor){const bytes=await readFile(path.join(ROOT,'node_modules','three','build',vendor));res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'public, max-age=86400'});return res.end(bytes);}
+      const file=publicFiles[url.pathname];if(!file)throw new ApiError(404,'NOT_FOUND','Not found.');
       const bytes=await readFile(path.join(ROOT,'public',file));
       const type=file.endsWith('.html')?'text/html':file.endsWith('.js')?'text/javascript':'text/css';
       res.writeHead(200,{'Content-Type':type+'; charset=utf-8','Cache-Control':'no-cache'});res.end(bytes);
