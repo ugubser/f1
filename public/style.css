@@ -69,3 +69,18 @@
 .map-tile.placing .turn-markers *{pointer-events:none}
 .camera-tile.placing-target{outline:2px solid var(--accent)}
 @media(max-width:760px){.tile-bar{flex-wrap:wrap}.tile-bar select{max-width:38%}.tile-pop{top:44px}}
+/* Multi-window layout (M4): a narrow map panel puts the map on top and the camera tiles in two columns below;
+   tile toolbars wrap onto two rows in narrow tiles so the selects stay readable. */
+.map-panel{container:tiles / inline-size}
+@container tiles (max-width: 1000px){
+.tile-grid[data-layout="2"],.tile-grid[data-layout="3"],.tile-grid[data-layout="4"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:var(--row);grid-auto-rows:calc(var(--row)*.72)}
+.tile-grid[data-layout="2"] .map-tile,.tile-grid[data-layout="3"] .map-tile,.tile-grid[data-layout="4"] .map-tile{grid-column:1/-1;grid-row:auto}
+.tile-grid[data-layout="3"] .camera-tile:last-child{grid-column:1/-1}
+}
+.camera-tile{container:tile / inline-size}
+@container tile (max-width: 400px){
+.tile-bar{flex-wrap:wrap;row-gap:5px}
+.tile-bar select{flex:1 1 40%;max-width:none}
+.tile-pop,.tile-shot{top:78px}
+.tile-pop{max-height:calc(100% - 88px)}
+}

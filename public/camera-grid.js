@@ -199,7 +199,7 @@ export class CameraGrid {
     this.tiles = new Map(); this.pending = null; this.local = [{...DEFAULT_CAMERA}]; this.state = null; this.geometry = null; this.maximized = null;
     this.scene = null; this.modules = null; this.Hud = null; this.error = null; this.carIndex = new Map(); this.carKey = ''; this.cornerKey = null;
     this.placing = null; this.placed = []; this.ownTrack = null; this.ownTrackFor = null;
-    this.visible = []; this.descriptors = [];
+    this.visible = []; this.descriptors = []; this.isHidden = n => this.hidden(n);
     this.lastAt = null; this.lastTime = null; this.fps = {frames: 0, since: null, value: 0}; this.cleared = true;
     this.debug = new URLSearchParams(location.search).has('debug3d') ? {} : null;
     if (this.debug) window.__f1Debug3d = {snapshot: () => structuredClone(this.debug.last ?? null)};
@@ -299,7 +299,7 @@ export class CameraGrid {
 
   refresh() {
     const list = this.state ? this.cameras() : [], ids = new Set(list.map(c => c.id));
-    for (const [id, tile] of this.tiles) if (!ids.has(id)) { tile.controller?.detach(); tile.hud?.dispose(); tile.el.remove(); this.tiles.delete(id); }
+    for (const [id, tile] of this.tiles) if (!ids.has(id)) { tile.controller?.detach(); tile.hudView?.dispose(); tile.el.remove(); this.tiles.delete(id); }
     if (this.maximized && this.maximized !== 'map' && !ids.has(this.maximized)) this.maximized = null;
     if (this.placing && !ids.has(this.placing.id)) this.placing = null;
     const cars = this.state?.cars || [], carKey = cars.map(c => `${c.driverNumber}:${c.abbreviation}`).sort().join(',');
@@ -368,10 +368,13 @@ export class CameraGrid {
       controller: null, controllerMode: null, config: null, frame: null, placeHeight: DEFAULT_PLACE_HEIGHT, hudView: null, hudOptions: {visible: false, availability: undefined, time: null},
       rect: {x: 0, y: 0, width: 0, height: 0}, target: {driverNumber: null, abbreviation: '', world: null, heading: 0, pitch: 0, stale: false}, context: {track: null, target: null, targetLabel: '', replayDt: 0, jumped: false, aspect: 1, placed: null},
       descriptor: {rect: null, camera: null, overview: false, hideLabel: null, carYaw: null, labelPx: 16, blank: true, ego: null}};
+    // The server requires a position for trackside cameras: without one, placement starts locally and the mode is
+    // committed together with the placed position (the select shows Trackside meanwhile; Esc reverts it).
     mode.onchange = () => {
-      const next = mode.value, c = tile.config, track = this.track();
+      const next = mode.value, c = tile.config;
+      if (next === 'trackside' && !c?.position) { this.startPlacing(id); return; }
+      if (this.placing?.id === id) this.placing = null;
       this.change(id, {mode: next});
-      if (next === 'trackside' && (!track || positionStatus(track, c?.position).status !== 'ok')) this.startPlacing(id);
     };
     driver.onchange = () => this.change(id, {driver: driver.value === '' ? null : +driver.value});
     max.onclick = () => this.toggleMaximize(id); remove.onclick = () => this.remove(id);
@@ -396,7 +399,8 @@ export class CameraGrid {
       tile.mode.replaceChildren(...modes.map(m => new Option(MODE_LABELS[m] || `${m} (unsupported)`, m)));
       tile.mode.dataset.key = modeKey;
     }
-    if (tile.mode.value !== config.mode) tile.mode.value = config.mode;
+    const shownMode = this.placing?.id === tile.id && this.placing.step === 'position' && config.mode !== 'trackside' ? 'trackside' : config.mode;
+    if (tile.mode.value !== shownMode) tile.mode.value = shownMode;
     if (carsChanged || !tile.driver.options.length) {
       tile.driver.replaceChildren(new Option('Selected / P1', ''), ...[...this.carIndex.values()].sort((a, b) => a.driverNumber - b.driverNumber).map(c => new Option(`${c.abbreviation} · ${c.driverNumber}`, String(c.driverNumber))));
     }
@@ -409,8 +413,14 @@ export class CameraGrid {
       tile.corner.disabled = !corners.length;
     }
     // Popover values follow the configuration unless the user is dragging that control.
-    const trackside = config.mode === 'trackside', track = this.track(), placed = trackside && track && positionStatus(track, config.position).status === 'ok';
-    if (placed) tile.placeHeight = clampHeight(Math.round(heightAbove(track, config.position)));
+    const trackside = config.mode === 'trackside', track = this.track(), p = config.position;
+    // Cached: refresh() runs on every state snapshot and the checks scan the centerline.
+    const placedKey = trackside && track && p ? `${p.x},${p.y},${p.z}` : null;
+    if (placedKey !== tile.placedKey || track !== tile.placedTrack) {
+      tile.placedKey = placedKey; tile.placedTrack = track; tile.placed = Boolean(placedKey) && positionStatus(track, p).status === 'ok';
+      if (tile.placed) tile.placeHeight = clampHeight(Math.round(heightAbove(track, p)));
+    }
+    const placed = tile.placed;
     if (document.activeElement !== tile.height.input) { tile.height.input.value = String(tile.placeHeight); tile.height.out.textContent = tile.placeHeight + ' m'; }
     tile.height.row.firstChild.textContent = placed ? 'HEIGHT' : 'PLACE AT';
     if (document.activeElement !== tile.fov.input) { tile.fov.input.value = String(config.fov); tile.fov.out.textContent = config.fov + '°'; }
@@ -466,7 +476,7 @@ export class CameraGrid {
     const jumped = this.lastTime === null || rawReplayDt < -0.001 || rawReplayDt > Math.max(3, (state.playback?.speed || 1) * 0.5);
     const replayDt = jumped ? 0 : Math.max(0, rawReplayDt);
     this.lastAt = at; if (time !== null) this.lastTime = time;
-    const poses = scene.updateCars(this.motion, at, n => this.hidden(n)), track = scene.track, tiles = this.descriptors, availability = state.availability?.car_data;
+    const poses = scene.updateCars(this.motion, at, this.isHidden), track = scene.track, tiles = this.descriptors, availability = state.availability?.car_data;
     tiles.length = 0;
     const debugTiles = this.debug ? [] : null;
     for (const tile of visible) {
