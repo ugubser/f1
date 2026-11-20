@@ -11,6 +11,7 @@ Branch `feature/3d-cameras`. Milestones M0–M6 are in [DECISION.md](DECISION.md
 - **M3/M4:** trackside cameras placed by map click at T1 and via *At turn* at Ascari both persist through REST. The director made 13–16 cuts per minute. Four tiles (chase, trackside, director, onboard) stayed independent and persisted. There is no horizontal scroll at 800/1280/1600/1920 px.
 - **Performance at 1600×1000:** headless Chromium on an RTX 4090 (Vulkan) ran 4 tiles plus the map at 60 fps, using 0.6/0.9 ms CPU per frame (p50/p95). SwiftShader software rendering ran about 26 fps with 1 tile and 12 fps with 4.
 - **Tests:** 151 automated tests pass (from 104), including track geometry, pose/telemetry buffering, pit-lane derivation, telemetry decoding, camera contract, director/placement maths and HUD states.
+- **Deployed to microserver** (20 November 2026) as `releases/e248fcd-3d-cameras-20261120`. The previous release is kept for rollback. 151/151 tests pass on Node 22.23.2. UI, vendor and 3D modules return 200, `.env` returns 404 and the API returns 401 without a token. Over the LAN, Monza loaded (full-rate re-download, ready in 37 s, car_data in 73 s) and chase/onboard tiles rendered with HUD values. Service memory was 223 MB after the load.
 - **Not verified:** live-mode 3D (D7), real-device GPUs other than the headless RTX 4090, and slow networks. Headless Vulkan logs one WebGL context loss/restore at startup, not caused by app code; rendering recovers.
 
 ---
